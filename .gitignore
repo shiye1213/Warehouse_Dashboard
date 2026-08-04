@@ -1,0 +1,8 @@
+.codex_tmp/
+.qa/
+.tmp_sheet_inspect/
+frontend/node_modules/
+frontend/dist/
+frontend/backend/
+backend/target/
+*.log
