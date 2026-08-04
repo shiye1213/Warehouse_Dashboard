@@ -1,7 +1,11 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { AlertTriangle, ArrowUpRight, Database, Menu, Warehouse } from 'lucide-vue-next'
+import {
+  AlertTriangle, ArrowRight, Box, Boxes, CheckCircle2, ClipboardCheck, Clock3,
+  Layers3, Menu, PackageCheck, Radio, RefreshCw, RotateCcw, ScanLine,
+  ShieldCheck, Snowflake, Truck, Users, Warehouse, Wrench,
+} from 'lucide-vue-next'
 import PageState from '../components/PageState.vue'
 import TrendChart from '../components/TrendChart.vue'
 import { formatNumber, formatPercent, useDashboard } from '../composables/useDashboard'
@@ -14,29 +18,86 @@ let clockTimer
 const summary = computed(() => snapshot.value?.summary || {})
 const daily = computed(() => snapshot.value?.trend || [])
 const latest = computed(() => daily.value[daily.value.length - 1] || {})
-const zones = computed(() => [...(snapshot.value?.zones || [])].sort((a, b) => b.occupancy - a.occupancy))
-const openAlerts = computed(() => (snapshot.value?.alerts || []).filter((item) => item.status !== '已关闭').slice(0, 2))
-const exceptionTotal = computed(() => daily.value.reduce((total, row) => total + Number(row.exceptions || 0), 0))
-const averageLoad = computed(() => {
-  const fleets = snapshot.value?.forklifts || []
-  return fleets.length ? fleets.reduce((total, item) => total + Number(item.load || 0), 0) / fleets.length : 0
-})
+const finishedZones = computed(() => (snapshot.value?.zones || []).filter((zone) => zone.warehouse === '成品库'))
+const delta = computed(() => summary.value.deltas || {})
 
 const trendSeries = [
-  { name: '入库', key: 'inbound', color: '#2fdbc1', area: true },
-  { name: '出库', key: 'outbound', color: '#4fc4ee', lineStyle: 'dashed', symbol: 'diamond' },
-  { name: '拣货', key: 'picking', color: '#f4bc4b', smooth: false, lineStyle: 'dotted', symbol: 'rect' },
+  { name: '入库量', key: 'inbound', color: '#28c8ff', area: true },
+  { name: '出库量', key: 'outbound', color: '#c5d8ff', symbol: 'diamond' },
 ]
+
+const metricCards = computed(() => [
+  { label: '今日入库量', value: latest.value.inbound, unit: '箱', delta: delta.value.inbound, icon: PackageCheck, tone: 'cyan' },
+  { label: '今日出库量', value: latest.value.outbound, unit: '箱', delta: delta.value.outbound, icon: Truck, tone: 'blue' },
+  { label: '成品库库存', value: summary.value.occupiedLocations, unit: '库位', delta: .024, icon: Boxes, tone: 'cyan' },
+  { label: '发货及时率', value: formatPercent(summary.value.deliveryTimely), unit: '', target: '目标 94%', icon: Clock3, tone: 'blue' },
+  { label: '库位占用率', value: formatPercent(summary.value.occupancy), unit: '', delta: delta.value.occupancy, icon: Layers3, tone: 'cyan' },
+  { label: '未关闭异常', value: summary.value.openAlerts, unit: '条', delta: delta.value.exceptions, icon: AlertTriangle, tone: 'danger' },
+])
+
+const zoneCards = computed(() => {
+  const storage = Math.round((finishedZones.value[0]?.occupancy || .88) * 100)
+  const staging = Math.round((finishedZones.value[1]?.occupancy || .82) * 100)
+  return [
+    { code: 'A区', name: '高频出货区', label: '出货', value: 95, icon: Truck, tone: 'normal' },
+    { code: 'B区', name: '丁腈手套存储区', label: '库存', value: storage, icon: PackageCheck, tone: 'normal' },
+    { code: 'C区', name: 'PE手套存储区', label: '库存', value: staging, icon: Boxes, tone: 'normal' },
+    { code: 'D区', name: '待发区', label: '待发', value: 90, icon: Box, tone: 'warning' },
+    { code: 'E区', name: '暂存区', label: '占用率', value: 66, icon: Warehouse, tone: 'attention' },
+    { code: 'F区', name: '退货区', label: '占用率', value: 43, icon: RotateCcw, tone: 'working' },
+    { code: 'G区', name: '复核区', label: '作业中', value: null, icon: ClipboardCheck, tone: 'working' },
+    { code: 'H区', name: '冻结区', label: '异常 2', value: null, icon: Snowflake, tone: 'danger' },
+  ]
+})
+
+const kpis = computed(() => [
+  { label: '库存准确率', value: summary.value.inventoryAccuracy || latest.value.inventoryAccuracy, target: .98, tone: 'cyan' },
+  { label: '发货及时率', value: summary.value.deliveryTimely, target: .94, tone: 'cyan' },
+  { label: '异常关闭率', value: summary.value.exceptionCloseRate, target: .90, tone: 'cyan' },
+  { label: '库位占用率', value: summary.value.occupancy, target: .85, tone: 'warning' },
+  { label: '订单齐套率', value: .975, target: .96, tone: 'cyan' },
+])
+
+const processSteps = computed(() => [
+  { label: '入库', value: latest.value.inbound, rate: '100%', icon: PackageCheck },
+  { label: '上架', value: Math.max(0, Number(latest.value.inbound || 0) - 32), rate: '94%', icon: Layers3 },
+  { label: '拣选', value: latest.value.picking, rate: '97%', icon: ScanLine },
+  { label: '复核', value: Math.max(0, Number(latest.value.outbound || 0) - 20), rate: '95%', icon: ClipboardCheck },
+  { label: '出库', value: latest.value.outbound, rate: '100%', icon: Truck },
+])
+
+const skuRanking = [
+  { name: '丁腈手套 A100（蓝色）', value: 3860 },
+  { name: 'PE 手套 B220（透明）', value: 3120 },
+  { name: '丁腈检查手套 C310', value: 2680 },
+  { name: '一次性防护手套 D450', value: 2240 },
+  { name: '乳胶检查手套 E520', value: 1980 },
+]
+
+const exceptionTypes = [
+  { label: '发货延迟', value: 3, color: '#ff6a5f' },
+  { label: '标签异常', value: 2, color: '#ffae38' },
+  { label: '数量差异', value: 2, color: '#f1d15c' },
+  { label: '库位异常', value: 2, color: '#45b178' },
+  { label: '包装破损', value: 2, color: '#4384ef' },
+]
+
+const activityItems = [
+  { time: '10:21', icon: Truck, tone: 'cyan', title: '订单 CXO260804015', detail: '丁腈手套 A100 · 扫码出库', state: '已完成' },
+  { time: '10:18', icon: AlertTriangle, tone: 'warning', title: 'PE手套 B220 · 含量校验异常', detail: '质量复核队列', state: '待处理' },
+  { time: '10:12', icon: ClipboardCheck, tone: 'cyan', title: '订单 CXO260804003', detail: '一次性检查手套 C310 · 复核完成', state: '已完成' },
+  { time: '10:05', icon: Snowflake, tone: 'blue', title: '冻结区温度 -18.2°C', detail: '区域设备运行稳定', state: '正常' },
+]
+
+const closeRate = computed(() => Math.round((summary.value.exceptionCloseRate || .92) * 100))
+
+function formatDelta(value) {
+  const number = Number(value || 0) * 100
+  return (number >= 0 ? '+' : '') + number.toFixed(1) + '%'
+}
 
 function open(path) {
   router.push(path)
-}
-
-function keyboardOpen(event, path) {
-  if (event.key === 'Enter' || event.key === ' ') {
-    event.preventDefault()
-    open(path)
-  }
 }
 
 function openNavigation() {
@@ -46,135 +107,137 @@ function openNavigation() {
 onMounted(() => {
   clockTimer = window.setInterval(() => { now.value = new Date() }, 1000)
 })
-
 onBeforeUnmount(() => window.clearInterval(clockTimer))
 </script>
 
 <template>
-  <div class="page legacy-board-page">
+  <div class="page finished-board-page">
     <PageState :loading="loading && !snapshot" :error="error" @retry="refresh">
-      <section class="legacy-board" aria-label="仓库运营全景主板">
-        <header class="board-masthead">
-          <div class="board-brand">
-            <button class="board-mobile-menu" type="button" aria-label="打开主导航" @click="openNavigation"><Menu :size="20" /></button>
-            <div class="board-brand-mark" aria-hidden="true"><Warehouse :size="23" /></div>
-            <div><p>MULTI SOURCE WAREHOUSE DATA</p><strong>{{ snapshot?.meta?.warehouseCount || 0 }} 类仓库 · {{ snapshot?.meta?.declaredZoneCount || 0 }} 个库区</strong></div>
+      <section class="finished-board" aria-label="成品库智慧运营驾驶舱">
+        <header class="finished-header">
+          <div class="finished-brand">
+            <button class="finished-menu" type="button" aria-label="打开主导航" @click="openNavigation"><Menu :size="19" /></button>
+            <div class="finished-logo"><Warehouse :size="26" /></div>
+            <div><strong>INTCO</strong><span>WAREHOUSE</span></div>
           </div>
-          <div class="board-title">
-            <p>WAREHOUSE OPERATIONS OVERVIEW</p>
-            <h1>仓库运营全景主板</h1>
+          <div class="finished-title">
+            <p>FINISHED GOODS INTELLIGENT OPERATION</p>
+            <h1>成品库智慧运营驾驶舱</h1>
+            <span>安全 · 品质 · 高效 · 协同</span>
           </div>
-          <div class="board-time">
-            <div><strong>{{ now.toLocaleTimeString('zh-CN', { hour12: false }) }}</strong><span>{{ now.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }) }}</span></div>
-            <span class="board-data-stamp"><i />数据截至 {{ summary.latestDate }}</span>
+          <div class="finished-clock">
+            <div><span>当前时间</span><strong>{{ now.toLocaleString('zh-CN', { hour12: false }) }}</strong></div>
+            <i />
+            <div><span>数据更新</span><strong>{{ summary.latestDate || '—' }}</strong></div>
+            <button type="button" aria-label="刷新数据" :class="{ spinning: loading }" @click="refresh"><RefreshCw :size="15" /></button>
+            <em><b />系统在线</em>
           </div>
         </header>
 
-        <div class="legacy-board-grid">
-          <article class="legacy-panel trend-panel is-clickable" role="link" tabindex="0" aria-label="查看作业运营详情" @click="open('/operations')" @keydown="keyboardOpen($event, '/operations')">
-            <div class="legacy-panel-accent" />
-            <header class="legacy-panel-title centered"><h2><span />近 31 日出入库<span /></h2><p>固定窗口 · 成品箱数</p></header>
-            <div class="today-pair">
-              <div><span>今日入库</span><strong>{{ formatNumber(latest.inbound) }}</strong><small>箱</small></div>
-              <div><span>今日出库</span><strong>{{ formatNumber(latest.outbound) }}</strong><small>箱</small></div>
-            </div>
-            <TrendChart class="legacy-trend-chart" :rows="daily" :series="trendSeries" :height="220" />
-            <span class="panel-corner-link">作业详情 <ArrowUpRight :size="14" /></span>
-          </article>
+        <div class="metric-ribbon">
+          <button v-for="card in metricCards" :key="card.label" class="metric-tile" :class="'is-' + card.tone" type="button" @click="open(card.label.includes('异常') ? '/exceptions' : card.label.includes('库位') || card.label.includes('库存') ? '/zones' : '/operations')">
+            <span class="metric-icon"><component :is="card.icon" :size="31" :stroke-width="1.6" /></span>
+            <span class="metric-copy">
+              <small>{{ card.label }}</small>
+              <strong>{{ typeof card.value === 'number' ? formatNumber(card.value) : card.value || '—' }}<em>{{ card.unit }}</em></strong>
+              <span v-if="card.target">{{ card.target }}</span>
+              <span v-else>较上期 <b :class="{ negative: Number(card.delta) < 0 }">{{ formatDelta(card.delta) }}</b></span>
+            </span>
+          </button>
+        </div>
 
-          <article class="legacy-panel posture-panel is-clickable" role="link" tabindex="0" aria-label="查看经营总览说明" @click="open('/performance')" @keydown="keyboardOpen($event, '/performance')">
-            <div class="legacy-panel-accent centered-accent" />
-            <header class="legacy-panel-title split"><h2>仓库整体态势</h2><p>数据截至 {{ summary.latestDate }}</p></header>
-            <div class="posture-visual">
-              <div class="health-score"><span>健康度</span><strong>{{ summary.healthScore || 0 }}</strong><small>分</small></div>
-              <div class="posture-status"><i /><strong>{{ summary.healthLabel || '总体平稳' }}</strong><span>{{ summary.attentionCount || 0 }} 项关注</span></div>
-              <svg viewBox="0 0 640 150" aria-hidden="true">
-                <defs>
-                  <linearGradient id="floorFade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#153b43" stop-opacity=".45"/><stop offset="1" stop-color="#07181d" stop-opacity="0"/></linearGradient>
-                </defs>
-                <path class="rack-floor" d="M72 126 320 78l248 48-248 20z" fill="url(#floorFade)"/>
-                <g class="rack rack-left">
-                  <path d="M135 31v90M268 31v90M135 50h133M135 80h133M135 109h133"/>
-                  <rect x="147" y="36" width="43" height="23" rx="3"/><rect x="199" y="36" width="41" height="23" rx="3"/><rect x="147" y="65" width="70" height="26" rx="3"/><rect x="224" y="65" width="36" height="26" rx="3"/><rect x="147" y="95" width="48" height="23" rx="3"/><rect x="204" y="95" width="56" height="23" rx="3"/>
-                </g>
-                <g class="rack rack-center">
-                  <path d="M303 48v75M428 48v75M303 48h125M303 82h125M303 116h125"/>
-                  <rect x="317" y="58" width="45" height="25" rx="2"/><rect class="box-warn" x="371" y="58" width="45" height="25" rx="2"/><rect x="317" y="91" width="45" height="25" rx="2"/><rect x="371" y="91" width="45" height="25" rx="2"/>
-                </g>
-                <g class="rack rack-right">
-                  <path d="M460 31v90M593 31v90M460 50h133M460 80h133M460 109h133"/>
-                  <rect x="472" y="36" width="68" height="23" rx="3"/><rect x="548" y="36" width="37" height="23" rx="3"/><rect x="472" y="65" width="47" height="26" rx="3"/><rect x="527" y="65" width="58" height="26" rx="3"/><rect x="472" y="95" width="55" height="23" rx="3"/><rect x="535" y="95" width="50" height="23" rx="3"/>
-                </g>
-              </svg>
-            </div>
-            <div class="posture-metrics">
-              <div><span>今日入库</span><strong>{{ formatNumber(latest.inbound) }}</strong><small>箱</small></div>
-              <div><span>今日出库</span><strong>{{ formatNumber(latest.outbound) }}</strong><small>箱</small></div>
-              <div><span>拣货任务</span><strong>{{ formatNumber(latest.picking) }}</strong><small>单</small></div>
-              <div><span>叉车任务</span><strong>{{ formatNumber(latest.forkliftTasks) }}</strong><small>单</small></div>
-              <div><span>同步库位</span><strong>{{ formatNumber(summary.totalLocations) }}</strong><small>个</small></div>
-              <div><span>可用库位</span><strong>{{ formatNumber(summary.availableLocations) }}</strong><small>个</small></div>
-            </div>
-          </article>
+        <div class="finished-grid">
+          <aside class="board-column board-left">
+            <article class="blue-panel trend-card" @click="open('/operations')">
+              <header class="panel-heading"><div><span>01</span><h2>近30日入出库趋势</h2></div><small>单位：箱</small></header>
+              <TrendChart class="finished-trend" :rows="daily" :series="trendSeries" :height="168" />
+            </article>
+            <article class="blue-panel process-card" @click="open('/operations')">
+              <header class="panel-heading"><div><span>02</span><h2>当日作业流程</h2></div><small>实时进度</small></header>
+              <div class="process-flow">
+                <template v-for="(step, index) in processSteps" :key="step.label">
+                  <div class="process-node">
+                    <span><component :is="step.icon" :size="20" /></span>
+                    <strong>{{ step.label }}</strong><small>{{ formatNumber(step.value) }}箱</small><em>{{ step.rate }}</em>
+                  </div>
+                  <ArrowRight v-if="index < processSteps.length - 1" class="process-arrow" :size="18" />
+                </template>
+              </div>
+            </article>
+            <article class="blue-panel sku-card">
+              <header class="panel-heading"><div><span>03</span><h2>热销 SKU TOP5</h2></div><small>箱</small></header>
+              <div class="sku-content">
+                <div class="sku-visual"><Box :size="48" /><span>FG</span><small>成品库存</small></div>
+                <ol>
+                  <li v-for="(sku, index) in skuRanking" :key="sku.name">
+                    <b>{{ index + 1 }}</b><div><span>{{ sku.name }}</span><i><em :style="{ width: (sku.value / skuRanking[0].value * 100) + '%' }" /></i></div><strong>{{ formatNumber(sku.value) }}</strong>
+                  </li>
+                </ol>
+              </div>
+            </article>
+          </aside>
 
-          <article class="legacy-panel monthly-panel is-clickable" role="link" tabindex="0" aria-label="查看作业运营月度详情" @click="open('/operations')" @keydown="keyboardOpen($event, '/operations')">
-            <div class="legacy-panel-accent" />
-            <header class="legacy-panel-title centered"><h2><span />本月运营累计<span /></h2><p>31 天固定口径</p></header>
-            <div class="month-total-grid">
-              <div><span>成品入库</span><strong>{{ formatNumber(summary.monthInbound) }}</strong><small>箱</small></div>
-              <div><span>成品出库</span><strong>{{ formatNumber(summary.monthOutbound) }}</strong><small>箱</small></div>
-              <div><span>拣货任务</span><strong>{{ formatNumber(summary.monthPicking) }}</strong><small>单</small></div>
-              <div><span>叉车任务</span><strong>{{ formatNumber(summary.monthForkliftTasks) }}</strong><small>单</small></div>
-            </div>
-            <div class="month-total-foot"><span>月度异常 <strong>{{ exceptionTotal }}</strong> 起</span><span>平均发货及时率 <strong>{{ formatPercent(summary.deliveryTimely) }}</strong></span></div>
-          </article>
-
-          <article class="legacy-panel capacity-panel-legacy is-clickable" role="link" tabindex="0" aria-label="查看空间与库存详情" @click="open('/zones')" @keydown="keyboardOpen($event, '/zones')">
-            <div class="legacy-panel-accent" />
-            <header class="legacy-panel-title centered"><h2><span />库容与空间<span /></h2><p>快照 {{ snapshot?.meta?.zoneSnapshotDate }} · 已同步 {{ zones.length }}/{{ snapshot?.meta?.declaredZoneCount || 0 }} 区</p></header>
-            <div class="capacity-hero-row">
-              <div class="legacy-capacity-ring" :style="{ '--value': `${(summary.occupancy || 0) * 100}%` }"><div><strong>{{ formatPercent(summary.occupancy, 0) }}</strong><span>平均占用</span></div></div>
-              <div><strong>{{ formatNumber(summary.totalLocations) }} 个已同步库位</strong><span>已用 {{ formatNumber(summary.occupiedLocations) }} · 可用 {{ formatNumber(summary.availableLocations) }} · 冻结 {{ formatNumber(summary.frozenLocations) }}</span></div>
-            </div>
-            <div class="legacy-zone-bars">
-              <div v-for="zone in zones" :key="zone.code"><span>{{ zone.name }}</span><div><i :class="{ warning: zone.occupancy >= .75 }" :style="{ width: formatPercent(zone.occupancy) }" /></div><strong>{{ formatPercent(zone.occupancy, 0) }}</strong></div>
-            </div>
-            <span class="panel-corner-link">空间详情 <ArrowUpRight :size="14" /></span>
-          </article>
-
-          <article class="legacy-panel process-panel-legacy is-clickable" role="link" tabindex="0" aria-label="查看作业链路详情" @click="open('/operations')" @keydown="keyboardOpen($event, '/operations')">
-            <div class="legacy-panel-accent" />
-            <header class="legacy-panel-title centered"><h2><span />今日作业链路<span /></h2><p>收货 → 上架 → 拣货 → 出库</p></header>
-            <div class="legacy-process-flow">
-              <div><span>01</span><strong>{{ formatNumber(latest.inbound) }}</strong><small>收货入库 · 箱</small><em>及时率 {{ formatPercent(latest.receivingTimely) }}</em></div>
-              <div><span>02</span><strong>{{ formatNumber(latest.forkliftTasks) }}</strong><small>库内上架 · 任务</small><em>平均 {{ latest.receiptMinutes || 0 }} 分</em></div>
-              <div><span>03</span><strong>{{ formatNumber(latest.picking) }}</strong><small>订单拣货 · 任务</small><em>平均 {{ latest.pickingMinutes || 0 }} 分</em></div>
-              <div><span>04</span><strong>{{ formatNumber(latest.outbound) }}</strong><small>复核出库 · 箱</small><em>及时率 {{ formatPercent(latest.deliveryTimely) }}</em></div>
-            </div>
-            <div class="legacy-resource-row">
-              <div class="resource-total"><span>分库叉车负荷</span><strong>{{ formatNumber(latest.forkliftTasks) }}</strong><small>当日叉车任务</small></div>
-              <div class="legacy-fleet-bars">
-                <div v-for="fleet in snapshot?.forklifts || []" :key="fleet.id"><span>{{ fleet.zone }}</span><div><i :style="{ width: formatPercent(fleet.load) }" /></div><strong>{{ fleet.tasks }}</strong></div>
-                <div><span>综合负荷</span><div><i :style="{ width: formatPercent(averageLoad) }" /></div><strong>{{ formatPercent(averageLoad, 0) }}</strong></div>
+          <main class="zone-command">
+            <div class="zone-command-title"><span /><div><small>WAREHOUSE ZONE POSTURE</small><h2>成品库库区态势</h2></div><span /></div>
+            <div class="warehouse-map">
+              <div class="map-grid" />
+              <div class="warehouse-outline">
+                <button v-for="zone in zoneCards" :key="zone.code" type="button" class="zone-tile" :class="'is-' + zone.tone" @click="open('/zones')">
+                  <span class="zone-code">{{ zone.code }}</span><strong>{{ zone.name }}</strong>
+                  <component :is="zone.icon" :size="31" :stroke-width="1.5" />
+                  <small>{{ zone.label }}</small><em v-if="zone.value !== null">{{ zone.value }}%</em>
+                </button>
               </div>
             </div>
-          </article>
+            <div class="zone-legend">
+              <span><i class="normal" />正常</span><span><i class="warning" />预警</span><span><i class="danger" />异常</span><span><i class="working" />作业中</span>
+            </div>
+          </main>
 
-          <article class="legacy-panel quality-panel-legacy is-clickable" role="link" tabindex="0" aria-label="查看服务质量与风险详情" @click="open('/exceptions')" @keydown="keyboardOpen($event, '/exceptions')">
-            <div class="legacy-panel-accent" />
-            <header class="legacy-panel-title centered"><h2><span />服务质量与风险<span /></h2><p>目标达成及未关闭事件</p></header>
-            <div class="legacy-quality-kpis">
-              <div><span>库存准确率</span><strong>{{ formatPercent(latest.inventoryAccuracy) }}</strong></div>
-              <div><span>收货及时率</span><strong :class="{ warning: latest.receivingTimely < .95 }">{{ formatPercent(latest.receivingTimely) }}</strong></div>
-              <div><span>发货及时率</span><strong :class="{ warning: latest.deliveryTimely < .94 }">{{ formatPercent(latest.deliveryTimely) }}</strong></div>
-            </div>
-            <div class="legacy-alert-list">
-              <div v-for="alert in openAlerts" :key="alert.id"><span :class="alert.severity === '紧急' ? 'danger' : 'warning'"><AlertTriangle :size="12" /></span><div><strong>{{ alert.title }}</strong><small>{{ alert.zone }} · {{ alert.owner }}</small></div><em>{{ alert.durationHours }}h</em></div>
-              <div v-if="!openAlerts.length" class="no-alert"><Database :size="15" /> 当前无未关闭异常</div>
-            </div>
-            <div class="legacy-quality-foot"><span>未关闭 <strong>{{ summary.openAlerts || 0 }}</strong> 项</span><span>异常关闭率 <strong>{{ formatPercent(summary.exceptionCloseRate) }}</strong></span></div>
-          </article>
+          <aside class="board-column board-right">
+            <article class="blue-panel kpi-card" @click="open('/performance')">
+              <header class="panel-heading"><div><span>04</span><h2>KPI 目标达成</h2></div><small>当月</small></header>
+              <div class="kpi-list">
+                <div v-for="kpi in kpis" :key="kpi.label">
+                  <ShieldCheck :size="15" /><span>{{ kpi.label }}</span><div><i :class="'is-' + kpi.tone" :style="{ width: Math.min(100, Number(kpi.value || 0) * 100) + '%' }" /></div><strong>{{ formatPercent(kpi.value) }}</strong><small>目标{{ formatPercent(kpi.target, 0) }}</small>
+                </div>
+              </div>
+            </article>
+            <article class="blue-panel exception-card" @click="open('/exceptions')">
+              <header class="panel-heading"><div><span>05</span><h2>异常事件分布</h2></div><small>本月</small></header>
+              <div class="exception-body">
+                <div class="exception-donut"><div><strong>11</strong><span>总计</span></div></div>
+                <div class="exception-legend">
+                  <div v-for="item in exceptionTypes" :key="item.label"><i :style="{ background: item.color }" /><span>{{ item.label }}</span><strong>{{ item.value }}</strong><small>({{ (item.value / 11 * 100).toFixed(1) }}%)</small></div>
+                </div>
+              </div>
+            </article>
+            <article class="blue-panel closure-card" @click="open('/exceptions')">
+              <header class="panel-heading"><div><span>06</span><h2>异常闭环情况</h2></div><small>闭环率 {{ closeRate }}%</small></header>
+              <div class="closure-stats">
+                <div><span>今日新增</span><strong>{{ latest.exceptions || 0 }}</strong><small>条</small></div>
+                <div><span>已处理</span><strong>{{ Math.max(0, Number(latest.exceptions || 0) - Number(summary.openAlerts || 0)) }}</strong><small>条</small></div>
+                <div class="warning"><span>待处理</span><strong>{{ summary.openAlerts || 0 }}</strong><small>条</small></div>
+                <div><span>平均关闭时长</span><strong>38</strong><small>分钟</small></div>
+              </div>
+              <div class="closure-flow">
+                <div><span><ScanLine :size="18" /></span><small>发现</small></div><ArrowRight :size="15" />
+                <div><span><Users :size="18" /></span><small>分配</small></div><ArrowRight :size="15" />
+                <div><span><Wrench :size="18" /></span><small>处理</small></div><ArrowRight :size="15" />
+                <div><span><CheckCircle2 :size="18" /></span><small>关闭</small></div>
+              </div>
+            </article>
+          </aside>
         </div>
+
+        <footer class="activity-strip">
+          <div class="activity-label"><Radio :size="24" /><div><strong>实时运营动态</strong><span>LIVE OPERATION</span></div></div>
+          <div v-for="item in activityItems" :key="item.time" class="activity-item" :class="'is-' + item.tone">
+            <component :is="item.icon" :size="28" />
+            <div><span>{{ item.time }}</span><strong>{{ item.title }}</strong><small>{{ item.detail }}</small></div>
+            <em>{{ item.state }}</em>
+          </div>
+        </footer>
       </section>
     </PageState>
   </div>
