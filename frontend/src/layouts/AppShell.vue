@@ -19,6 +19,7 @@ import {
   Wifi,
   X,
 } from 'lucide-vue-next'
+import WarehouseScopeBar from '../components/WarehouseScopeBar.vue'
 import { useDashboard } from '../composables/useDashboard'
 
 const route = useRoute()
@@ -27,6 +28,7 @@ const collapsed = ref(localStorage.getItem('warehouse.sidebar.collapsed') === 't
 const mobileOpen = ref(false)
 const now = ref(new Date())
 const { snapshot, loading, refresh } = useDashboard()
+const scopeVisible = computed(() => !['overview', 'data-center', 'zone-detail'].includes(String(route.name || '')))
 
 const navItems = [
   { to: '/overview', label: '经营总览', note: '客户与高管视图', icon: CircleGauge },
@@ -48,7 +50,9 @@ function toggleSidebar() {
 }
 
 function navigate(path) {
-  router.push(path)
+  const query = path !== '/overview' && route.query.warehouse
+    ? { warehouse: route.query.warehouse } : {}
+  router.push({ path, query })
   mobileOpen.value = false
 }
 
@@ -113,7 +117,7 @@ onBeforeUnmount(() => {
       <header class="topbar">
         <div class="topbar-left">
           <button class="mobile-menu" aria-label="打开导航" @click="mobileOpen = true"><Menu :size="21" /></button>
-          <button v-if="route.name === 'zone-detail'" class="back-button" @click="router.push('/zones')"><ChevronLeft :size="18" /> 返回库区</button>
+          <button v-if="route.name === 'zone-detail'" class="back-button" @click="navigate('/zones')"><ChevronLeft :size="18" /> 返回库区</button>
           <div v-else>
             <p>{{ route.meta?.eyebrow }}</p>
             <h1>{{ currentLabel }}</h1>
@@ -127,6 +131,7 @@ onBeforeUnmount(() => {
         </div>
       </header>
 
+      <WarehouseScopeBar v-if="scopeVisible" />
       <router-view v-slot="{ Component }">
         <Transition name="page" mode="out-in">
           <component :is="Component" />

@@ -6,9 +6,10 @@ import PageState from '../components/PageState.vue'
 import PanelCard from '../components/PanelCard.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TrendChart from '../components/TrendChart.vue'
-import { formatNumber, formatPercent, useDashboard } from '../composables/useDashboard'
+import { formatNumber, formatPercent } from '../composables/useDashboard'
+import { useScopedDashboard } from '../composables/useWarehouseScope'
 
-const { snapshot, loading, error, refresh } = useDashboard()
+const { snapshot, loading, error, refresh, selectedWarehouse } = useScopedDashboard()
 const fleets = computed(() => snapshot.value?.forklifts || [])
 const rows = computed(() => (snapshot.value?.trend || []).slice(-14))
 const totalTasks = computed(() => fleets.value.reduce((sum, item) => sum + Number(item.tasks || 0), 0))
@@ -21,7 +22,7 @@ const series = [{ name: '叉车任务', key: 'forkliftTasks', type: 'bar', color
 <template>
   <div class="page">
     <PageState :loading="loading && !snapshot" :error="error" @retry="refresh">
-      <div class="page-intro"><div><p>RESOURCE ORCHESTRATION</p><h2>资源负荷与调度</h2><span>观察各仓任务池负荷，提前识别高峰和跨库支援机会。</span></div><div class="quality-seal"><Truck :size="21" /><span><strong>{{ fleets.length }} 个任务池在线</strong><small>总任务 {{ formatNumber(totalTasks) }} 单</small></span></div></div>
+      <div class="page-intro"><div><p>RESOURCE ORCHESTRATION · {{ selectedWarehouse }}</p><h2>{{ selectedWarehouse }}资源负荷与调度</h2><span>观察各仓任务池负荷，提前识别高峰和跨库支援机会。</span></div><div class="quality-seal"><Truck :size="21" /><span><strong>{{ fleets.length }} 个任务池在线</strong><small>总任务 {{ formatNumber(totalTasks) }} 单</small></span></div></div>
       <section class="metric-grid four">
         <MetricCard label="当前任务" :value="formatNumber(totalTasks)" unit="单" note="全部任务池" tone="mint"><template #icon><Route :size="18" /></template></MetricCard>
         <MetricCard label="平均负荷" :value="formatPercent(averageLoad, 0)" note="资源利用水平" tone="blue"><template #icon><Gauge :size="18" /></template></MetricCard>

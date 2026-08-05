@@ -235,7 +235,7 @@ function severityTone(severity) {
 }
 
 function open(path) {
-  router.push(path)
+  router.push({ path, query: { warehouse: '成品库' } })
 }
 
 function openNavigation() {

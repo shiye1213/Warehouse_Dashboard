@@ -6,10 +6,11 @@ import MetricCard from '../components/MetricCard.vue'
 import PageState from '../components/PageState.vue'
 import PanelCard from '../components/PanelCard.vue'
 import StatusBadge from '../components/StatusBadge.vue'
-import { formatPercent, useDashboard } from '../composables/useDashboard'
+import { formatPercent } from '../composables/useDashboard'
+import { useScopedDashboard } from '../composables/useWarehouseScope'
 
 const route = useRoute()
-const { snapshot, loading, error, refresh } = useDashboard()
+const { snapshot, loading, error, refresh, selectedWarehouse } = useScopedDashboard()
 const filter = ref(route.query.focus ? '全部' : '未关闭')
 const focus = ref(route.query.focus || '')
 const filters = ['未关闭', '全部', '紧急', '已关闭']
@@ -32,7 +33,7 @@ function changeFilter(value) { filter.value = value; focus.value = '' }
 <template>
   <div class="page">
     <PageState :loading="loading && !snapshot" :error="error" @retry="refresh">
-      <div class="page-intro"><div><p>RISK RESPONSE</p><h2>风险与异常处置</h2><span>聚合严重程度、SLA、责任人与建议动作，推动异常闭环。</span></div><div class="segmented-control"><button v-for="item in filters" :key="item" :class="{ active: filter === item && !focus }" @click="changeFilter(item)">{{ item }}</button></div></div>
+      <div class="page-intro"><div><p>RISK RESPONSE · {{ selectedWarehouse }}</p><h2>{{ selectedWarehouse }}风险与异常处置</h2><span>聚合严重程度、SLA、责任人与建议动作，推动异常闭环。</span></div><div class="segmented-control"><button v-for="item in filters" :key="item" :class="{ active: filter === item && !focus }" @click="changeFilter(item)">{{ item }}</button></div></div>
       <section class="metric-grid four">
         <MetricCard label="未关闭异常" :value="openCount" unit="项" note="当前待处置" tone="rose"><template #icon><AlertOctagon :size="18" /></template></MetricCard>
         <MetricCard label="紧急异常" :value="criticalCount" unit="项" note="优先响应" tone="amber"><template #icon><ShieldAlert :size="18" /></template></MetricCard>
