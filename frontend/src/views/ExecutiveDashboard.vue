@@ -37,6 +37,10 @@ const zoneOccupancy = computed(() => zoneCapacity.value ? zoneOccupied.value / z
 const openAlerts = computed(() => alerts.filter((item) => item.status !== '已关闭'))
 const closedAlerts = computed(() => alerts.filter((item) => item.status === '已关闭'))
 const closeRate = computed(() => alerts.length ? closedAlerts.value.length / alerts.length : 1)
+const carouselAlerts = computed(() => alerts.slice().reverse().slice(0, 5))
+const activeAlertIndex = ref(0)
+const alertCarouselPaused = ref(false)
+let alertCarouselTimer
 
 const inventorySummary = computed(() => ({
   onHand: sum(inventory, 'onHand'),
@@ -225,8 +229,60 @@ function animateZoneOccupancy() {
   zoneAnimationFrame = requestAnimationFrame(tick)
 }
 
-onMounted(animateZoneOccupancy)
-onBeforeUnmount(() => cancelAnimationFrame(zoneAnimationFrame))
+function alertCarouselOffset(index) {
+  const count = carouselAlerts.value.length
+  if (!count) return 0
+  let offset = index - activeAlertIndex.value
+  if (offset > count / 2) offset -= count
+  if (offset < -count / 2) offset += count
+  return offset
+}
+
+function alertCarouselStyle(index) {
+  const offset = alertCarouselOffset(index)
+  const distance = Math.abs(offset)
+  const translateY = offset * 43
+  const translateZ = distance * -72
+  const scale = Math.max(.7, 1 - distance * .11)
+  return {
+    transform: 'translate3d(0, calc(-50% + ' + translateY + 'px), ' + translateZ + 'px) scale(' + scale + ')',
+    opacity: String(Math.max(.3, 1 - distance * .27)),
+    zIndex: String(10 - distance),
+    filter: 'brightness(' + Math.max(.62, 1 - distance * .16) + ') blur(' + Math.max(0, distance - 1) * .35 + 'px)',
+  }
+}
+
+function startAlertCarousel() {
+  clearInterval(alertCarouselTimer)
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  if (reducedMotion || carouselAlerts.value.length < 2) return
+  alertCarouselTimer = setInterval(() => {
+    if (!alertCarouselPaused.value) {
+      activeAlertIndex.value = (activeAlertIndex.value + 1) % carouselAlerts.value.length
+    }
+  }, 2800)
+}
+
+function rotateAlerts(direction) {
+  const count = carouselAlerts.value.length
+  if (!count) return
+  activeAlertIndex.value = (activeAlertIndex.value + direction + count) % count
+  startAlertCarousel()
+}
+
+function selectAlert(index) {
+  activeAlertIndex.value = index
+  startAlertCarousel()
+}
+
+onMounted(() => {
+  animateZoneOccupancy()
+  startAlertCarousel()
+})
+onBeforeUnmount(() => {
+  cancelAnimationFrame(zoneAnimationFrame)
+  clearInterval(alertCarouselTimer)
+})
 
 function severityTone(severity) {
   if (severity === '紧急') return 'urgent'
@@ -404,8 +460,20 @@ function openNavigation() {
           <article class="blue-panel source-alert-list" @click="open('/exceptions')">
             <header class="panel-heading"><div><span>06</span><h2>异常明细与责任人</h2></div><small>{{ ownerGroups.map((item) => item.label + ' ' + item.value + '条').join(' · ') }}</small></header>
             <div class="actual-alert-head"><span>级别</span><span>预警内容</span><span>发现时间</span><span>责任人</span><span>状态</span></div>
-            <div class="actual-alert-rows">
-              <div v-for="alert in alerts.slice().reverse().slice(0, 5)" :key="alert.id" :class="'severity-' + severityTone(alert.severity)">
+            <div
+              class="actual-alert-rows is-carousel"
+              @wheel.prevent.stop="rotateAlerts($event.deltaY >= 0 ? 1 : -1)"
+              @mouseenter="alertCarouselPaused = true"
+              @mouseleave="alertCarouselPaused = false"
+            >
+              <div
+                v-for="(alert, alertIndex) in carouselAlerts"
+                :key="alert.id"
+                :class="['severity-' + severityTone(alert.severity), { 'is-current': alertIndex === activeAlertIndex }]"
+                :style="alertCarouselStyle(alertIndex)"
+                :aria-current="alertIndex === activeAlertIndex ? 'true' : undefined"
+                @click.stop="selectAlert(alertIndex)"
+              >
                 <span class="alert-severity"><AlertTriangle :size="11" />{{ alert.severity }}</span>
                 <strong>{{ alert.type }} · {{ alert.zone }}</strong>
                 <small>{{ alert.time.slice(5) }}</small>
