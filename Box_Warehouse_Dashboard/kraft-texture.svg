@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="220" height="220" viewBox="0 0 220 220">
+  <filter id="leather" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB">
+    <feTurbulence type="fractalNoise" baseFrequency="0.42" numOctaves="5" seed="37" stitchTiles="stitch" result="grain"/>
+    <feColorMatrix in="grain" type="saturate" values="0" result="mono"/>
+    <feComponentTransfer in="mono" result="soft-grain">
+      <feFuncR type="gamma" amplitude="1.15" exponent="0.72" offset="0.02"/>
+      <feFuncG type="gamma" amplitude="1.04" exponent="0.76" offset="0.01"/>
+      <feFuncB type="gamma" amplitude="0.92" exponent="0.82" offset="0"/>
+      <feFuncA type="table" tableValues="0.2 0.82"/>
+    </feComponentTransfer>
+    <feGaussianBlur in="soft-grain" stdDeviation="0.18"/>
+  </filter>
+  <rect width="220" height="220" fill="#d8ad78" filter="url(#leather)" opacity="0.72"/>
+</svg>
