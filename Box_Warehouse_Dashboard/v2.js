@@ -28,12 +28,12 @@ document.querySelectorAll('.out-icon').forEach((el) => { el.textContent = String
 
 // Navigate dashboard cards into the original Vue warehouse pages.
 const detailLinks = [
-  ['.hero-kpis > div:nth-child(2)', 'inbound'],
-  ['.hero-kpis > div:nth-child(3)', 'outbound'],
+  ['.hero-kpis > div:nth-child(1)', 'inbound'],
+  ['.hero-kpis > div:nth-child(2)', 'outbound'],
+  ['.hero-kpis > div:nth-child(3)', 'inventory'],
   ['.hero-kpis > div:nth-child(4)', 'inventory'],
   ['.hero-kpis > div:nth-child(5)', 'inventory'],
-  ['.hero-kpis > div:nth-child(6)', 'inventory'],
-  ['.hero-kpis > div:nth-child(7)', 'exceptions'],
+  ['.hero-kpis > div:nth-child(6)', 'exceptions'],
   ['.left-column .metric-box:nth-child(1)', 'inbound'],
   ['.left-column .metric-box:nth-child(2)', 'outbound'],
   ['.left-column .stock-card', 'inventory'],
