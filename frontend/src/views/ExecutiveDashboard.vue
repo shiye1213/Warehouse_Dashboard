@@ -64,17 +64,90 @@ const todayOperations = computed(() => [
   { label: '加班工时', value: latest.overtimeHours, unit: '小时', icon: Users },
 ])
 
-const businessSteps = computed(() => [
-  { code: '01', label: '成品入库', value: formatNumber(latest.inbound) + ' 箱', note: latest.inboundOrders + ' 张入库单', icon: PackageCheck, tone: 'blue', path: '/operations' },
-  { code: '02', label: '叉车调度', value: formatNumber(latest.forkliftTasks) + ' 项', note: '当日叉车任务', icon: Truck, tone: 'cyan', path: '/resources' },
-  { code: '03', label: '拣货作业', value: formatNumber(latest.picking) + ' 项', note: '平均 ' + latest.pickingMinutes + ' 分钟', icon: ScanLine, tone: 'green', path: '/operations' },
-  { code: '04', label: '成品出库', value: formatNumber(latest.outbound) + ' 箱', note: latest.outboundOrders + ' 张出库单', icon: Box, tone: 'amber', path: '/operations' },
-  { code: '05', label: '异常闭环', value: formatPercent(closeRate.value, 0), note: alerts.length + ' 条月度事件', icon: ShieldCheck, tone: 'violet', path: '/exceptions' },
-])
-
 const weekRows = daily.slice(-7)
 const previousWeekRows = daily.slice(-14, -7)
+const yesterday = daily.at(-2)
 const relative = (current, previous) => previous ? (current - previous) / previous : 0
+
+const businessSteps = computed(() => {
+  const weekPeak = (key) => Math.max(...weekRows.map((row) => Number(row[key] || 0)), 1)
+  const receivingTarget = target('入库及时率') || 0.95
+  const pickingTarget = target('平均拣货时长') || 45
+  const deliveryTarget = target('出库及时率') || 0.94
+
+  return [
+    {
+      code: '01', label: '成品入库', value: formatNumber(latest.inbound) + ' 箱', note: latest.inboundOrders + ' 张入库单',
+      icon: PackageCheck, tone: 'blue', color: '#55b7ff', status: latest.receivingTimely >= receivingTarget ? '正常' : '关注',
+      statusTone: latest.receivingTimely >= receivingTarget ? 'good' : 'warning', path: '/operations',
+      trendLabel: '入库趋势', trendRows: weekRows, trendSeries: [{ name: '入库量', key: 'inbound', color: '#55b7ff' }],
+      metrics: [
+        { label: '今日入库箱数', value: formatNumber(latest.inbound) + ' 箱' },
+        { label: '近7日均值', value: formatNumber(average(weekRows, 'inbound')) + ' 箱' },
+        { label: '较昨日', value: formatDelta(relative(latest.inbound, yesterday.inbound)) },
+        { label: '入库及时率', value: formatPercent(latest.receivingTimely) },
+      ],
+      progressLabel: '入库及时率', progressValue: formatPercent(latest.receivingTimely), progress: latest.receivingTimely * 100,
+      detailLabel: '查看入库详情',
+    },
+    {
+      code: '02', label: '叉车调度', value: formatNumber(latest.forkliftTasks) + ' 项', note: '当日叉车任务',
+      icon: Truck, tone: 'cyan', color: '#55d9df', status: latest.exceptions === 0 ? '正常' : '关注',
+      statusTone: latest.exceptions === 0 ? 'good' : 'warning', path: '/resources',
+      trendLabel: '任务趋势', trendRows: weekRows, trendSeries: [{ name: '叉车任务', key: 'forkliftTasks', color: '#55d9df' }],
+      metrics: [
+        { label: '今日任务', value: formatNumber(latest.forkliftTasks) + ' 项' },
+        { label: '近7日均值', value: formatNumber(average(weekRows, 'forkliftTasks'), 1) + ' 项' },
+        { label: '较昨日', value: formatDelta(relative(latest.forkliftTasks, yesterday.forkliftTasks)) },
+        { label: '加班工时', value: formatNumber(latest.overtimeHours, 1) + ' 小时' },
+      ],
+      progressLabel: '近7日峰值占比', progressValue: formatPercent(latest.forkliftTasks / weekPeak('forkliftTasks'), 0),
+      progress: latest.forkliftTasks / weekPeak('forkliftTasks') * 100, detailLabel: '查看调度详情',
+    },
+    {
+      code: '03', label: '拣货作业', value: formatNumber(latest.picking) + ' 项', note: '平均 ' + latest.pickingMinutes + ' 分钟',
+      icon: ScanLine, tone: 'green', color: '#83d963', status: latest.pickingMinutes <= pickingTarget ? '正常' : '关注',
+      statusTone: latest.pickingMinutes <= pickingTarget ? 'good' : 'warning', path: '/operations',
+      trendLabel: '拣货趋势', trendRows: weekRows, trendSeries: [{ name: '拣货任务', key: 'picking', color: '#83d963' }],
+      metrics: [
+        { label: '今日任务', value: formatNumber(latest.picking) + ' 项' },
+        { label: '平均时长', value: formatNumber(latest.pickingMinutes) + ' 分钟' },
+        { label: '较昨日', value: formatDelta(relative(latest.picking, yesterday.picking)) },
+        { label: '库存准确率', value: formatPercent(latest.inventoryAccuracy) },
+      ],
+      progressLabel: '时长目标达成', progressValue: latest.pickingMinutes <= pickingTarget ? '达标' : '预警',
+      progress: Math.min(100, pickingTarget / Math.max(latest.pickingMinutes, 1) * 100), detailLabel: '查看拣货详情',
+    },
+    {
+      code: '04', label: '成品出库', value: formatNumber(latest.outbound) + ' 箱', note: latest.outboundOrders + ' 张出库单',
+      icon: Box, tone: 'amber', color: '#ffad3b', status: latest.deliveryTimely >= deliveryTarget ? '正常' : '关注',
+      statusTone: latest.deliveryTimely >= deliveryTarget ? 'good' : 'warning', path: '/operations',
+      trendLabel: '出库趋势', trendRows: weekRows, trendSeries: [{ name: '出库量', key: 'outbound', color: '#ffad3b' }],
+      metrics: [
+        { label: '今日出库箱数', value: formatNumber(latest.outbound) + ' 箱' },
+        { label: '近7日均值', value: formatNumber(average(weekRows, 'outbound')) + ' 箱' },
+        { label: '较昨日', value: formatDelta(relative(latest.outbound, yesterday.outbound)) },
+        { label: '出库及时率', value: formatPercent(latest.deliveryTimely) },
+      ],
+      progressLabel: '出库及时率', progressValue: formatPercent(latest.deliveryTimely), progress: latest.deliveryTimely * 100,
+      detailLabel: '查看出库详情',
+    },
+    {
+      code: '05', label: '异常闭环', value: formatPercent(closeRate.value, 0), note: alerts.length + ' 条月度事件',
+      icon: ShieldCheck, tone: 'violet', color: '#ad6dff', status: openAlerts.value.length === 0 ? '达成' : '关注',
+      statusTone: openAlerts.value.length === 0 ? 'good' : 'warning', path: '/exceptions',
+      trendLabel: '异常趋势', trendRows: weekRows, trendSeries: [{ name: '异常数', key: 'exceptions', color: '#ad6dff', smooth: false }],
+      metrics: [
+        { label: '未关闭异常', value: openAlerts.value.length + ' 条' },
+        { label: '已关闭异常', value: closedAlerts.value.length + ' 条' },
+        { label: '超 SLA', value: alerts.filter((item) => item.slaBreached).length + ' 条' },
+        { label: '闭环及时率', value: formatPercent(closeRate.value, 0) },
+      ],
+      progressLabel: '异常关闭率', progressValue: formatPercent(closeRate.value, 0), progress: closeRate.value * 100,
+      detailLabel: '查看异常详情',
+    },
+  ]
+})
 const weeklyReview = computed(() => {
   const inbound = sum(weekRows, 'inbound')
   const outbound = sum(weekRows, 'outbound')
@@ -239,13 +312,28 @@ function openNavigation() {
             <section class="business-overview">
               <div class="business-process">
                 <template v-for="(step, index) in businessSteps" :key="step.code">
-                  <button type="button" class="business-step" :class="'is-' + step.tone" @click="open(step.path)">
-                    <span class="business-code">{{ step.code }}</span>
-                    <strong>{{ step.label }}</strong>
-                    <span class="business-icon"><component :is="step.icon" :size="25" /></span>
-                    <em>{{ step.value }}</em>
-                    <small>{{ step.note }}</small>
-                    <b>点击查看 <ChevronRight :size="12" /></b>
+                  <button type="button" class="business-step is-detailed" :class="'is-' + step.tone" @click="open(step.path)">
+                    <header class="business-card-head">
+                      <span>{{ step.code }}</span><strong>{{ step.label }}</strong>
+                      <em :class="'is-' + step.statusTone">{{ step.status }}</em>
+                    </header>
+                    <div class="business-card-summary">
+                      <span class="business-icon"><component :is="step.icon" :size="24" /></span>
+                      <div><strong>{{ step.value }}</strong><small>{{ step.note }}</small></div>
+                    </div>
+                    <div class="business-mini-chart">
+                      <span>{{ step.trendLabel }}（近7日）</span>
+                      <TrendChart :rows="step.trendRows" :series="step.trendSeries" :height="64" :show-legend="false" compact draw-animation />
+                      <small><i>{{ step.trendRows[0].date.slice(5).replace('-', '/') }}</i><i>{{ step.trendRows.at(-1).date.slice(5).replace('-', '/') }}</i></small>
+                    </div>
+                    <div class="business-stat-grid">
+                      <div v-for="metric in step.metrics" :key="metric.label"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></div>
+                    </div>
+                    <div class="business-progress">
+                      <div><span>{{ step.progressLabel }}</span><strong>{{ step.progressValue }}</strong></div>
+                      <i><em :style="{ width: Math.min(step.progress, 100) + '%' }" /></i>
+                    </div>
+                    <b>{{ step.detailLabel }} <ChevronRight :size="12" /></b>
                   </button>
                   <ChevronRight v-if="index < businessSteps.length - 1" class="business-connector" :size="22" />
                 </template>

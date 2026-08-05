@@ -13,6 +13,7 @@ const props = defineProps({
   height: { type: Number, default: 260 },
   showLegend: { type: Boolean, default: true },
   drawAnimation: { type: Boolean, default: false },
+  compact: { type: Boolean, default: false },
 })
 
 const chartEl = ref(null)
@@ -27,7 +28,9 @@ const options = computed(() => ({
   animationEasing: 'cubicOut',
   animationEasingUpdate: 'linear',
   color: props.series.map((item) => item.color),
-  grid: { left: 12, right: 14, top: props.showLegend ? 44 : 18, bottom: 8, containLabel: true },
+  grid: props.compact
+    ? { left: 2, right: 2, top: 7, bottom: 2, containLabel: false }
+    : { left: 12, right: 14, top: props.showLegend ? 44 : 18, bottom: 8, containLabel: true },
   legend: props.showLegend ? {
     top: 2,
     right: 4,
@@ -47,22 +50,22 @@ const options = computed(() => ({
     type: 'category',
     boundaryGap: props.series.some((item) => item.type === 'bar'),
     data: props.rows.map((item) => item.date?.slice(5).replace('-', '/') || item.label || ''),
-    axisLine: { lineStyle: { color: 'rgba(150, 184, 180, .14)' } },
+    axisLine: { show: !props.compact, lineStyle: { color: 'rgba(150, 184, 180, .14)' } },
     axisTick: { show: false },
-    axisLabel: { color: '#6f8584', fontSize: 10, interval: Math.max(0, Math.floor(props.rows.length / 7) - 1) },
+    axisLabel: { show: !props.compact, color: '#6f8584', fontSize: 10, interval: Math.max(0, Math.floor(props.rows.length / 7) - 1) },
   },
   yAxis: {
     type: 'value',
     splitNumber: 4,
-    axisLabel: { color: '#6f8584', fontSize: 10 },
-    splitLine: { lineStyle: { color: 'rgba(150, 184, 180, .08)' } },
+    axisLabel: { show: !props.compact, color: '#6f8584', fontSize: 10 },
+    splitLine: { lineStyle: { color: props.compact ? 'rgba(115, 170, 211, .07)' : 'rgba(150, 184, 180, .08)' } },
   },
   series: props.series.map((item) => ({
     name: item.name,
     type: item.type || 'line',
     smooth: item.smooth !== false,
     symbol: item.symbol || 'circle',
-    showSymbol: props.rows.length < 10,
+    showSymbol: !props.compact && props.rows.length < 10,
     symbolSize: 5,
     barMaxWidth: 20,
     data: props.rows.map((row, index) => (
@@ -70,7 +73,7 @@ const options = computed(() => ({
         ? Number(row[item.key] || 0) * (item.percent ? 100 : 1)
         : null
     )),
-    lineStyle: { width: 2, type: item.lineStyle || 'solid' },
+    lineStyle: { width: props.compact ? 1.7 : 2, type: item.lineStyle || 'solid' },
     itemStyle: { borderRadius: item.type === 'bar' ? [4, 4, 0, 0] : 0 },
     areaStyle: item.area ? {
       opacity: 1,
