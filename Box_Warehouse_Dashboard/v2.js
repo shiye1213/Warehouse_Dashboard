@@ -238,6 +238,49 @@ function animateTaskTables() {
   window.requestAnimationFrame(scrollRows);
 }
 window.requestAnimationFrame(animateTaskTables);
+
+// Premium count-up for hero KPI cards, metric boxes and stock numbers.
+function animateValueCounts() {
+  const targets = [
+    ...document.querySelectorAll('.hero-kpi .kpi-main strong'),
+    ...document.querySelectorAll('.metric-box strong'),
+    ...document.querySelectorAll('.stock-number strong'),
+  ];
+  const duration = 1500;
+  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+  targets.forEach((el) => {
+    const small = el.querySelector('small');
+    const textNode = small ? Array.from(el.childNodes).find((n) => n.nodeType === 3 && n.nodeValue.trim()) : null;
+    const raw = String(textNode ? textNode.nodeValue : el.textContent).trim();
+    let target;
+    let decimals = 0;
+    let suffix = '';
+    if (/^[\d,]+$/.test(raw)) {
+      target = Number(raw.replace(/,/g, ''));
+    } else {
+      const m = raw.match(/^(\d+(?:\.\d+)?)\s*([MK%万亿]?)$/);
+      if (!m) return;
+      target = parseFloat(m[1]);
+      suffix = m[2] || '';
+      decimals = m[1].includes('.') ? m[1].split('.')[1].length : 0;
+    }
+    const format = (v) => v.toLocaleString('en-US', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }) + suffix;
+    const start = performance.now();
+    const tick = (now) => {
+      const p = Math.min((now - start) / duration, 1);
+      const val = format(target * easeOutCubic(p));
+      if (textNode) textNode.nodeValue = val;
+      else el.textContent = val;
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+}
+setTimeout(animateValueCounts, 350);
+
 const orderRoller = document.querySelector('.order-roller');
 const orderRollerTrack = document.querySelector('.order-roller-track');
 if (orderRoller && orderRollerTrack) {

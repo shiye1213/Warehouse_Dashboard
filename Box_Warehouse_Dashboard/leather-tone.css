@@ -1,0 +1,256 @@
+/* ============================================================
+   深色暖金工业风 + 牛皮质感毛玻璃 主题覆盖层
+   仅重构视觉样式，不改布局 / 组件结构 / 业务数据 / 图表类型
+   加载顺序：v2.css -> case-glass.css -> paper-tone.css -> leather-tone.css
+   ============================================================ */
+
+/* ---------- 颜色变量 ---------- */
+:root {
+  --page-bg: #171910;
+  --panel-bg: rgba(48, 48, 32, 0.78);
+  --panel-bg-light: rgba(82, 73, 47, 0.38);
+  --gold-primary: #d9a83e;
+  --gold-light: #f0c66b;
+  --text-primary: #f3ead2;
+  --text-secondary: #b8b09a;
+  --olive-green: #9fbd78;
+  --warning: #d99032;
+  --danger: #d96b4b;
+  --border-gold: rgba(225, 179, 77, 0.24);
+
+  /* 映射既有变量到新配色 */
+  --white: #f3ead2;
+  --muted: #b8b09a;
+  --faint: #a49c84;
+  --line: rgba(224, 208, 164, 0.12);
+  --ink: #14140d;
+  --cyan: #E0AD3F;   /* 入库 */
+  --purple: #A9C989; /* 出库 */
+  --mint: #A5C77B;   /* 库存 */
+  --amber: #d99032;
+  --red: #d96b4b;
+}
+
+/* ---------- 页面背景 ---------- */
+body { background: #15170f; }
+.screen {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(194, 145, 52, 0.08), transparent 38%),
+    linear-gradient(135deg, #15170f 0%, #202117 55%, #171810 100%);
+}
+.scene { opacity: .22; filter: blur(6px) saturate(.85) brightness(.58); }
+/* 背景光斑改暖金 / 橄榄，去掉蓝紫霓虹 */
+.orb-a { background: rgba(194, 145, 52, .5); }
+.orb-b { background: rgba(132, 150, 96, .42); }
+
+/* ---------- 卡片：牛皮质感毛玻璃 ---------- */
+.panel, .glass, .glass-strong, .top {
+  border-radius: 14px;
+  border: 1px solid var(--border-gold);
+  background:
+    linear-gradient(145deg, rgba(92, 82, 54, 0.35), rgba(35, 37, 25, 0.78));
+  backdrop-filter: blur(14px) saturate(110%);
+  -webkit-backdrop-filter: blur(14px) saturate(110%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 173, 0.12),
+    inset 0 -16px 30px rgba(0, 0, 0, 0.12),
+    0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* 细腻牛皮噪点纹理（feTurbulence，baseFrequency 0.85 / 3 octaves） */
+.panel::before, .glass-strong::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.12;
+  mix-blend-mode: soft-light;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 顶部高光降为低对比暖金（非 panel 的玻璃元素，如顶栏） */
+.top::before {
+  opacity: .32;
+  background: linear-gradient(90deg, transparent, rgba(240, 198, 107, .5), transparent);
+}
+/* 顶栏背景压暗，衬托标题高对比 */
+.top {
+  background: linear-gradient(145deg, rgba(72, 64, 42, .5), rgba(22, 24, 14, .9));
+}
+
+/* 内部小卡片同款皮感 */
+.metric-box, .task-pane {
+  border-color: rgba(225, 179, 77, .2);
+  background:
+    linear-gradient(145deg, rgba(92, 82, 54, .26), rgba(35, 37, 25, .52));
+  backdrop-filter: blur(10px) saturate(110%);
+  -webkit-backdrop-filter: blur(10px) saturate(110%);
+  box-shadow: inset 0 1px 0 rgba(255, 232, 173, .1), 0 8px 16px rgba(0, 0, 0, .14);
+}
+
+/* hero 指标卡容器与六块卡片统一皮感，保持卡片与容器可区分 */
+.hero-kpis {
+  background: linear-gradient(145deg, rgba(92, 82, 54, .28), rgba(28, 30, 19, .72)) !important;
+  border-color: rgba(225, 179, 77, .22);
+}
+.hero-kpis .hero-kpi {
+  background: linear-gradient(145deg, rgba(108, 96, 62, .4), rgba(42, 44, 30, .66)) !important;
+  border-color: rgba(225, 179, 77, .35) !important;
+}
+
+/* ---------- 图表配色 ---------- */
+.cyan-line { filter: drop-shadow(0 0 6px rgba(224, 173, 63, .4)); }
+.purple-line { filter: drop-shadow(0 0 5px rgba(169, 201, 137, .32)); }
+.mint-line { filter: drop-shadow(0 0 6px rgba(165, 199, 123, .35)); }
+.gridlines path { stroke: rgba(224, 208, 164, .08); }
+.axis text { fill: #AFA791; }
+.chart-3d-grid path { stroke: rgba(224, 208, 164, .06); }
+
+#area30 stop { stop-color: #E0AD3F; }
+#area30 stop:first-child { stop-opacity: .28; }
+#area30 stop:last-child { stop-opacity: 0; }
+#stockFill stop { stop-color: #A5C77B; }
+#stockFill stop:first-child { stop-opacity: .28; }
+#stockFill stop:last-child { stop-opacity: 0; }
+#monthlyFill stop { stop-color: #D9A83E; }
+#monthlyFill stop:first-child { stop-opacity: .28; }
+#monthlyFill stop:last-child { stop-opacity: 0; }
+
+/* 库存 / 占比条：暖金 + 橄榄 */
+.hbar i { background: linear-gradient(90deg, #d9a83e, #f0c66b); }
+.purplebar i { background: linear-gradient(90deg, #9fbd78, #a9c989); }
+
+/* 标题光晕暖金化 */
+.hero-title h2 span { text-shadow: 0 0 25px rgba(224, 173, 63, .4); }
+
+/* ---------- 状态徽章：贴合新配色 ---------- */
+.pill.good { color: #b5cf94; background: rgba(159, 189, 120, .14); }
+.pill.warn { color: #e6ac5a; background: rgba(217, 144, 50, .16); }
+.pill.danger { color: #e68a6e; background: rgba(217, 107, 75, .16); }
+.state.done { color: #b5cf94; background: rgba(159, 189, 120, .14); }
+.state.doing { color: #e6b25f; background: rgba(217, 160, 62, .15); }
+.state.waiting { color: #d9b277; background: rgba(217, 144, 50, .14); }
+
+/* ---------- 交互：仅上移 2px，边框与顶部高光轻微增强 ---------- */
+.panel {
+  transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+}
+.panel:hover {
+  transform: translateY(-2px);
+  border-color: rgba(240, 198, 107, .4);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 173, .22),
+    inset 0 -16px 30px rgba(0, 0, 0, .12),
+    0 8px 24px rgba(0, 0, 0, .18);
+}
+
+/* ============================================================
+   高级感动画：入场 / 光斑漂移 / 呼吸 / 标题流光 / KPI 悬浮
+   ============================================================ */
+
+/* 顶栏与卡片交错入场 */
+.top, .panel { animation: card-in .8s cubic-bezier(.2, .75, .25, 1) backwards; }
+.top { animation-delay: .05s; }
+.left-column .panel:nth-child(1) { animation-delay: .1s; }
+.center-column .panel:nth-child(1) { animation-delay: .15s; }
+.right-column .panel:nth-child(1) { animation-delay: .2s; }
+.left-column .panel:nth-child(2) { animation-delay: .2s; }
+.center-column .panel:nth-child(2) { animation-delay: .28s; }
+.right-column .panel:nth-child(2) { animation-delay: .32s; }
+.left-column .panel:nth-child(3) { animation-delay: .3s; }
+.right-column .panel:nth-child(3) { animation-delay: .42s; }
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(24px) scale(.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* 背景光斑缓慢漂移 */
+.orb-a { animation: orb-drift-a 18s ease-in-out infinite alternate; }
+.orb-b { animation: orb-drift-b 22s ease-in-out infinite alternate; }
+@keyframes orb-drift-a {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(110px, 80px) scale(1.12); }
+}
+@keyframes orb-drift-b {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(-90px, 110px) scale(1.15); }
+}
+
+/* 状态点与右上角徽章点：呼吸灯 */
+.online i,
+.hero-badges i { animation: dot-pulse 1.8s ease-in-out infinite; }
+.hero-badges span:nth-child(2) i { animation-delay: .3s; }
+.hero-badges span:nth-child(3) i { animation-delay: .6s; }
+@keyframes dot-pulse {
+  0%, 100% { box-shadow: 0 0 6px rgba(165, 199, 123, .9); transform: scale(1); }
+  50% { box-shadow: 0 0 22px rgba(165, 199, 123, 1), 0 0 8px rgba(165, 199, 123, .85); transform: scale(1.55); }
+}
+
+/* 主标题金色流光：深一档饱和黄底 + 亮光带扫过 */
+.headline h1 {
+  color: #f2bd4d;
+  background: linear-gradient(100deg, #e8a83a 0%, #f2c14e 36%, #ffe9a1 50%, #f2c14e 64%, #e8a83a 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: title-shimmer 1.8s linear infinite;
+}
+@keyframes title-shimmer {
+  to { background-position: 200% center; }
+}
+
+/* 指标卡悬浮微抬升 */
+.hero-kpi { transition: transform .18s ease, background .18s ease, border-color .18s ease; }
+.hero-kpi:hover { transform: translateY(-3px); }
+
+/* 图表：线条呼吸光效 */
+.cyan-line { animation: line-glow-cyan 4s ease-in-out infinite; }
+.purple-line { animation: line-glow-purple 4.5s ease-in-out infinite; }
+.mint-line { animation: line-glow-mint 4.2s ease-in-out infinite; }
+@keyframes line-glow-cyan {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(224, 173, 63, .35)); }
+  50% { filter: drop-shadow(0 0 12px rgba(224, 173, 63, .75)); }
+}
+@keyframes line-glow-purple {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(169, 201, 137, .3)); }
+  50% { filter: drop-shadow(0 0 12px rgba(169, 201, 137, .65)); }
+}
+@keyframes line-glow-mint {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(165, 199, 123, .3)); }
+  50% { filter: drop-shadow(0 0 12px rgba(165, 199, 123, .65)); }
+}
+
+/* 图表：面积呼吸 */
+.area,
+.monthly-area,
+svg.stock-chart path[fill^="url(#stockFill)"] {
+  animation: area-breathe 5s ease-in-out infinite;
+}
+@keyframes area-breathe {
+  0%, 100% { opacity: .65; }
+  50% { opacity: 1; }
+}
+
+/* 环形图（库位占用）呼吸光效 */
+.ring-face-occupied {
+  animation: ring-glow 3.6s ease-in-out infinite;
+}
+@keyframes ring-glow {
+  0%, 100% { filter: drop-shadow(0 0 4px rgba(217, 168, 62, .35)); }
+  50% { filter: drop-shadow(0 0 14px rgba(217, 168, 62, .7)); }
+}
+
+/* 折线图 3D 立体层与线条同色系，去除蓝调 */
+.line-3d-cyan .line-3d-base { stroke: #8a6a33; }
+.line-3d-cyan .line-3d-side { fill: #c99a4d; }
+.line-3d-purple .line-3d-base { stroke: #4a6336; }
+.line-3d-purple .line-3d-side { fill: #7d9a5f; }
+.line-3d-mint .line-3d-base { stroke: #3f5a40; }
+.line-3d-mint .line-3d-side { fill: #6e8f6a; }
+
+/* 折线图悬浮数据点与线条同色，去除蓝调 */
+.line-point.入库 { fill: #E0AD3F; }
+.line-point.出库 { fill: #A9C989; }
+.line-point.库存 { fill: #A5C77B; }
