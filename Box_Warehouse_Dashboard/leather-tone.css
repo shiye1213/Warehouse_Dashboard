@@ -6,9 +6,9 @@
 
 /* ---------- 颜色变量 ---------- */
 :root {
-  --page-bg: #171910;
-  --panel-bg: rgba(48, 48, 32, 0.78);
-  --panel-bg-light: rgba(82, 73, 47, 0.38);
+  --page-bg: #131a26;
+  --panel-bg: rgba(32, 44, 64, 0.78);
+  --panel-bg-light: rgba(56, 74, 102, 0.38);
   --gold-primary: #d9a83e;
   --gold-light: #f0c66b;
   --text-primary: #f3ead2;
@@ -32,13 +32,22 @@
 }
 
 /* ---------- 页面背景 ---------- */
-body { background: #15170f; }
+body { background: #10141f; }
 .screen {
   background:
-    radial-gradient(circle at 50% 0%, rgba(194, 145, 52, 0.08), transparent 38%),
-    linear-gradient(135deg, #15170f 0%, #202117 55%, #171810 100%);
+    radial-gradient(circle at 50% 0%, rgba(217, 168, 62, 0.1), transparent 42%),
+    linear-gradient(135deg, #121826 0%, #1c2636 55%, #131a26 100%);
 }
-.scene { opacity: .22; filter: blur(6px) saturate(.85) brightness(.58); }
+.scene { opacity: .28; filter: blur(5px) saturate(1) brightness(.68); }
+/* 中部 hero 背景图与界面深蓝灰底融合 */
+.hero-image {
+  filter: saturate(1.02) contrast(.97) brightness(.9);
+}
+.hero-vignette {
+  background:
+    linear-gradient(90deg, rgba(10, 16, 26, .82), rgba(16, 24, 36, .3) 48%, rgba(24, 34, 50, .1) 72%, rgba(12, 18, 28, .4)),
+    linear-gradient(0deg, rgba(10, 15, 24, .85), transparent 55%);
+}
 /* 背景光斑改暖金 / 橄榄，去掉蓝紫霓虹 */
 .orb-a { background: rgba(194, 145, 52, .5); }
 .orb-b { background: rgba(132, 150, 96, .42); }
@@ -46,28 +55,71 @@ body { background: #15170f; }
 /* ---------- 卡片：牛皮质感毛玻璃 ---------- */
 .panel, .glass, .glass-strong, .top {
   border-radius: 14px;
-  border: 1px solid var(--border-gold);
+  border: 2px solid rgba(216, 175, 80, 0.5);
   background:
-    linear-gradient(145deg, rgba(92, 82, 54, 0.35), rgba(35, 37, 25, 0.78));
+    linear-gradient(145deg, rgba(42, 56, 80, 0.4), rgba(20, 28, 42, 0.82));
   backdrop-filter: blur(14px) saturate(110%);
   -webkit-backdrop-filter: blur(14px) saturate(110%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 232, 173, 0.12),
-    inset 0 -16px 30px rgba(0, 0, 0, 0.12),
-    0 8px 24px rgba(0, 0, 0, 0.18);
+    inset 0 1px 0 rgba(255, 232, 173, 0.16),
+    inset 0 -18px 34px rgba(0, 0, 0, 0.3),
+    0 14px 24px -10px rgba(0, 0, 0, 0.5),
+    0 28px 56px -16px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(216, 175, 80, 0.14);
 }
 
-/* 细腻牛皮噪点纹理（feTurbulence，baseFrequency 0.85 / 3 octaves） */
-.panel::before, .glass-strong::before {
+/* 卡片边框动态流光：旋转的 conic-gradient 光带 */
+@property --border-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+/* 去掉静态边框：细深色框用 box-shadow 画在最外缘，流光环（4px）承担动态光 */
+.panel {
+  border: 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 232, 173, 0.16),
+    inset 0 -18px 34px rgba(0, 0, 0, 0.3),
+    0 14px 24px -10px rgba(0, 0, 0, 0.5),
+    0 28px 56px -16px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(122, 95, 46, 0.7);
+}
+.panel::before {
   content: "";
   position: absolute;
   inset: 0;
-  z-index: 1;
+  z-index: 2;
   pointer-events: none;
-  opacity: 0.12;
-  mix-blend-mode: soft-light;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  border-radius: inherit;
+  padding: 4px;
+  background:
+    conic-gradient(
+      from var(--border-angle),
+      transparent 0deg,
+      rgba(255, 242, 190, 1) 25deg,
+      rgba(255, 217, 122, 0.7) 90deg,
+      rgba(150, 118, 52, 0.28) 150deg,
+      transparent 190deg,
+      transparent 360deg
+    ),
+    rgba(150, 118, 52, 0.25);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  filter: drop-shadow(0 0 7px rgba(255, 217, 122, 0.8));
+  animation: border-rotate 4s linear infinite;
 }
+@keyframes border-rotate {
+  to { --border-angle: 360deg; }
+}
+/* 各卡片流光相位错开，不同步更自然 */
+.center-column .panel::before { animation-delay: 1.2s; }
+.left-column .panel:nth-child(2)::before { animation-delay: .8s; }
+.left-column .panel:nth-child(3)::before { animation-delay: 1.6s; }
+.right-column .panel::before { animation-delay: 2.4s; }
+.right-column .panel:nth-child(2)::before { animation-delay: 3s; }
+.right-column .panel:nth-child(3)::before { animation-delay: 3.8s; }
 
 /* 顶部高光降为低对比暖金（非 panel 的玻璃元素，如顶栏） */
 .top::before {
@@ -76,27 +128,30 @@ body { background: #15170f; }
 }
 /* 顶栏背景压暗，衬托标题高对比 */
 .top {
-  background: linear-gradient(145deg, rgba(72, 64, 42, .5), rgba(22, 24, 14, .9));
+  background: linear-gradient(145deg, rgba(38, 52, 74, .5), rgba(16, 22, 32, .9));
 }
 
 /* 内部小卡片同款皮感 */
 .metric-box, .task-pane {
-  border-color: rgba(225, 179, 77, .2);
+  border-color: rgba(216, 175, 80, .35);
+  border-width: 1px;
   background:
-    linear-gradient(145deg, rgba(92, 82, 54, .26), rgba(35, 37, 25, .52));
+    linear-gradient(145deg, rgba(42, 56, 80, .3), rgba(22, 30, 44, .6));
   backdrop-filter: blur(10px) saturate(110%);
   -webkit-backdrop-filter: blur(10px) saturate(110%);
-  box-shadow: inset 0 1px 0 rgba(255, 232, 173, .1), 0 8px 16px rgba(0, 0, 0, .14);
+  box-shadow: inset 0 1px 0 rgba(255, 232, 173, .12), inset 0 -6px 12px rgba(0, 0, 0, .18), 0 8px 16px rgba(0, 0, 0, .2);
 }
 
 /* hero 指标卡容器与六块卡片统一皮感，保持卡片与容器可区分 */
 .hero-kpis {
-  background: linear-gradient(145deg, rgba(92, 82, 54, .28), rgba(28, 30, 19, .72)) !important;
+  background: linear-gradient(145deg, rgba(42, 56, 80, .32), rgba(18, 26, 38, .74)) !important;
   border-color: rgba(225, 179, 77, .22);
 }
 .hero-kpis .hero-kpi {
-  background: linear-gradient(145deg, rgba(108, 96, 62, .4), rgba(42, 44, 30, .66)) !important;
-  border-color: rgba(225, 179, 77, .35) !important;
+  background: linear-gradient(145deg, rgba(52, 68, 96, .42), rgba(26, 36, 52, .68)) !important;
+  border-color: rgba(216, 175, 80, .5) !important;
+  border-width: 1px !important;
+  box-shadow: inset 0 1px 0 rgba(255, 248, 231, .16), inset 0 -6px 12px rgba(0, 0, 0, .2), 0 10px 20px -8px rgba(0, 0, 0, .5) !important;
 }
 
 /* ---------- 图表配色 ---------- */
@@ -137,12 +192,31 @@ body { background: #15170f; }
   transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
 }
 .panel:hover {
-  transform: translateY(-2px);
-  border-color: rgba(240, 198, 107, .4);
+  transform: translateY(-4px);
   box-shadow:
     inset 0 1px 0 rgba(255, 232, 173, .22),
-    inset 0 -16px 30px rgba(0, 0, 0, .12),
-    0 8px 24px rgba(0, 0, 0, .18);
+    inset 0 -18px 34px rgba(0, 0, 0, .24),
+    0 18px 32px -10px rgba(0, 0, 0, .55),
+    0 36px 70px -18px rgba(0, 0, 0, .55),
+    0 0 0 1px rgba(212, 175, 80, .6);
+}
+
+/* 折线图左右留白加大，纵轴数值避开流光环 */
+.chart {
+  margin-left: 16px;
+  margin-right: 16px;
+  width: calc(100% - 32px);
+}
+
+/* 右侧近12个月出入库的累计入库/出库：与左侧一致的上浮高亮，但不跳转 */
+.right-column .metric-box {
+  cursor: default;
+  transition: transform .2s ease, border-color .2s ease, background-color .2s ease;
+}
+.right-column .metric-box:hover {
+  transform: translateY(-2px);
+  border-color: rgba(235, 218, 173, .4);
+  background-color: rgba(208, 200, 158, .1);
 }
 
 /* ============================================================
