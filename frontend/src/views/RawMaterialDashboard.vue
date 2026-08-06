@@ -6,7 +6,6 @@ import {
   ArrowUpFromLine,
   Box,
   Boxes,
-  ChevronRight,
   CircleHelp,
   ClipboardList,
   Clock3,
@@ -20,6 +19,7 @@ import {
   Timer,
 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
+import AnimatedNumber from '../components/AnimatedNumber.vue'
 import PageState from '../components/PageState.vue'
 import IndustrialTank from '../components/IndustrialTank.vue'
 import TrendChart from '../components/RawMaterialTrendChart.vue'
@@ -110,28 +110,36 @@ const riskTargetRows = computed(() => [
   {
     key: 'occupancy',
     name: '库区占用率',
-    display: formatPercent(summary.value.occupancy),
+    value: summary.value.occupancy,
+    formatter: formatPercent,
+    unit: '',
     target: '目标 ≤ 85%',
     met: Number(summary.value.occupancy || 0) <= 0.85,
   },
   {
     key: 'openExceptions',
     name: '未关闭异常',
-    display: `${formatNumber(summary.value.openExceptions)} 项`,
+    value: summary.value.openExceptions,
+    formatter: formatInteger,
+    unit: ' 项',
     target: '目标 ≤ 10 项',
     met: Number(summary.value.openExceptions || 0) <= 10,
   },
   {
     key: 'exceptionCloseRate',
     name: '异常关闭率',
-    display: formatPercent(summary.value.exceptionCloseRate),
+    value: summary.value.exceptionCloseRate,
+    formatter: formatPercent,
+    unit: '',
     target: '目标 ≥ 90%',
     met: Number(summary.value.exceptionCloseRate || 0) >= 0.9,
   },
   {
     key: 'avgAlertAge',
     name: '平均未闭环时长',
-    display: `${avgAlertAgeHours.value.toFixed(1)} 小时`,
+    value: avgAlertAgeHours.value,
+    formatter: formatOneDecimal,
+    unit: ' 小时',
     target: '目标 ≤ 48 小时',
     met: avgAlertAgeHours.value <= 48,
   },
@@ -139,6 +147,23 @@ const riskTargetRows = computed(() => [
 
 function formatTon(value, digits = 3) {
   return Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+}
+
+function formatInteger(value) {
+  return formatNumber(Math.round(Number(value || 0)))
+}
+
+function formatOneDecimal(value) {
+  return Number(value || 0).toFixed(1)
+}
+
+function formatTwoDecimals(value) {
+  return Number(value || 0).toFixed(2)
+}
+
+function formatSignedDecimal(value) {
+  const amount = Number(value || 0)
+  return `${amount >= 0 ? '+' : ''}${amount.toFixed(1)}`
 }
 
 function formatSignedTon(value) {
@@ -263,49 +288,44 @@ onBeforeUnmount(() => {
         </header>
 
         <div class="raw-kpi-strip">
-          <article class="raw-kpi-card">
+          <article class="raw-kpi-card" role="link" tabindex="0" aria-label="查看空间与库存" @click="navigateTo('/zones')" @keydown.enter.self="navigateTo('/zones')" @keydown.space.self.prevent="navigateTo('/zones')">
             <span class="raw-kpi-icon mint"><Boxes /></span>
-            <div><small>原料库存量</small><strong>{{ formatTon(summary.stockOnHandTon) }}<em>吨</em></strong><p>可用库存 {{ formatTon(summary.stockAvailableTon) }} 吨</p></div>
-            <button class="raw-kpi-arrow" type="button" aria-label="查看空间与库存" @click="navigateTo('/zones')"><ChevronRight /></button>
+            <div><small>原料库存量</small><strong><AnimatedNumber :value="summary.stockOnHandTon" :formatter="formatTon" :animation-key="refreshVersion" /><em>吨</em></strong><p>可用库存 <AnimatedNumber :value="summary.stockAvailableTon" :formatter="formatTon" :animation-key="refreshVersion" /> 吨</p></div>
           </article>
-          <article class="raw-kpi-card">
+          <article class="raw-kpi-card" role="link" tabindex="0" aria-label="查看入库作业" @click="navigateTo('/operations')" @keydown.enter.self="navigateTo('/operations')" @keydown.space.self.prevent="navigateTo('/operations')">
             <span class="raw-kpi-icon mint round"><ArrowDownToLine /></span>
-            <div><small>今日原料入库</small><strong>{{ formatTon(summary.todayRawInbound) }}<em>吨</em></strong><p>较昨日 <b class="positive">{{ formatSignedPercent(latestFlowComparison.inbound) }}</b></p></div>
-            <button class="raw-kpi-arrow" type="button" aria-label="查看入库作业" @click="navigateTo('/operations')"><ChevronRight /></button>
+            <div><small>今日原料入库</small><strong><AnimatedNumber :value="summary.todayRawInbound" :formatter="formatTon" :animation-key="refreshVersion" /><em>吨</em></strong><p>较昨日 <b class="positive"><AnimatedNumber :value="latestFlowComparison.inbound" :formatter="formatSignedPercent" :animation-key="refreshVersion" /></b></p></div>
           </article>
-          <article class="raw-kpi-card">
+          <article class="raw-kpi-card" role="link" tabindex="0" aria-label="查看领用作业" @click="navigateTo('/operations')" @keydown.enter.self="navigateTo('/operations')" @keydown.space.self.prevent="navigateTo('/operations')">
             <span class="raw-kpi-icon mint round"><ArrowUpFromLine /></span>
-            <div><small>今日生产领用</small><strong>{{ formatTon(summary.todayRawOutbound) }}<em>吨</em></strong><p>较昨日 <b class="positive">{{ formatSignedPercent(latestFlowComparison.outbound) }}</b></p></div>
-            <button class="raw-kpi-arrow" type="button" aria-label="查看领用作业" @click="navigateTo('/operations')"><ChevronRight /></button>
+            <div><small>今日生产领用</small><strong><AnimatedNumber :value="summary.todayRawOutbound" :formatter="formatTon" :animation-key="refreshVersion" /><em>吨</em></strong><p>较昨日 <b class="positive"><AnimatedNumber :value="latestFlowComparison.outbound" :formatter="formatSignedPercent" :animation-key="refreshVersion" /></b></p></div>
           </article>
-          <article class="raw-kpi-card" :class="{ 'is-warning': Number(summary.occupancy || 0) > 0.85 }">
+          <article class="raw-kpi-card" :class="{ 'is-warning': Number(summary.occupancy || 0) > 0.85 }" role="link" tabindex="0" aria-label="查看库区占用明细" @click="navigateTo('/zones')" @keydown.enter.self="navigateTo('/zones')" @keydown.space.self.prevent="navigateTo('/zones')">
             <span class="raw-kpi-icon amber"><Layers3 /></span>
-            <div><small>库区占用率</small><strong>{{ formatPercent(summary.occupancy) }}</strong><p>较警戒线 <b class="warning">+{{ ((Number(summary.occupancy || 0) - 0.85) * 100).toFixed(1) }} 个百分点</b></p></div>
-            <button class="raw-kpi-arrow" type="button" aria-label="查看库区占用明细" @click="navigateTo('/zones')"><ChevronRight /></button>
+            <div><small>库区占用率</small><strong><AnimatedNumber :value="summary.occupancy" :formatter="formatPercent" :animation-key="refreshVersion" /></strong><p>较警戒线 <b class="warning"><AnimatedNumber :value="(Number(summary.occupancy || 0) - 0.85) * 100" :formatter="formatSignedDecimal" :animation-key="refreshVersion" /> 个百分点</b></p></div>
           </article>
-          <article class="raw-kpi-card" :class="{ 'is-danger': Number(summary.openExceptions || 0) > 10 }">
+          <article class="raw-kpi-card" :class="{ 'is-danger': Number(summary.openExceptions || 0) > 10 }" role="link" tabindex="0" aria-label="查看异常明细" @click="navigateTo('/exceptions')" @keydown.enter.self="navigateTo('/exceptions')" @keydown.space.self.prevent="navigateTo('/exceptions')">
             <span class="raw-kpi-icon rose"><AlertTriangle /></span>
-            <div><small>未关闭异常</small><strong>{{ formatNumber(summary.openExceptions) }}<em>项</em></strong><p>SLA 超时 <b class="danger">{{ formatNumber(summary.slaBreached) }} 条</b></p></div>
-            <button class="raw-kpi-arrow" type="button" aria-label="查看异常明细" @click="navigateTo('/exceptions')"><ChevronRight /></button>
+            <div><small>未关闭异常</small><strong><AnimatedNumber :value="summary.openExceptions" :formatter="formatInteger" :animation-key="refreshVersion" /><em>项</em></strong><p>SLA 超时 <b class="danger"><AnimatedNumber :value="summary.slaBreached" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</b></p></div>
           </article>
         </div>
 
         <div class="raw-board-grid">
-          <article class="raw-panel raw-flow-panel">
+          <article class="raw-panel raw-flow-panel" role="link" tabindex="0" aria-label="查看原料收发详情" @click="navigateTo('/operations')" @keydown.enter.self="navigateTo('/operations')" @keydown.space.self.prevent="navigateTo('/operations')">
             <span class="raw-panel-accent" />
             <header class="raw-panel-title split"><h2>近 31 日原料收发趋势 <CircleHelp /></h2><p>单位：吨</p></header>
             <div class="raw-today-pair">
-              <div><span>7 月累计入库</span><strong>{{ formatTon(summary.monthRawInbound) }}</strong><small>吨</small></div>
-              <div><span>7 月累计领用</span><strong>{{ formatTon(summary.monthRawOutbound) }}</strong><small>吨</small></div>
-              <div><span>净变化</span><strong>{{ formatSignedTon(netInventoryChange) }}</strong><small>吨</small><em>较昨日</em></div>
+              <div><span>7 月累计入库</span><strong><AnimatedNumber :value="summary.monthRawInbound" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
+              <div><span>7 月累计领用</span><strong><AnimatedNumber :value="summary.monthRawOutbound" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
+              <div><span>净变化</span><strong><AnimatedNumber :value="netInventoryChange" :formatter="formatSignedTon" :animation-key="refreshVersion" /></strong><small>吨</small><em>较昨日</em></div>
             </div>
-            <TrendChart :key="refreshVersion" class="raw-trend-chart" :rows="trend" :series="flowSeries" :height="210" :show-axis-unit="false" category-boundary-gap nice-y-axis :y-axis-split-number="5" :axis-bottom="15" :x-axis-label-margin="10" unit="吨" />
-            <div class="raw-flow-foot"><span>月度净补库</span><strong>{{ formatSignedTon(netInventoryChange) }} 吨</strong><em>今日净变化 {{ formatSignedTon(todayFlowBalance) }} 吨</em><button class="raw-panel-link" type="button" aria-label="查看原料收发详情" @click="navigateTo('/operations')">查看详情<ChevronRight /></button></div>
+            <TrendChart :key="refreshVersion" class="raw-trend-chart" :rows="trend" :series="flowSeries" :height="220" :show-axis-unit="false" category-boundary-gap nice-y-axis :y-axis-split-number="6" :y-axis-max="1.2" :y-axis-interval="0.2" :axis-bottom="15" :x-axis-label-margin="10" unit="吨" />
+            <div class="raw-flow-foot"><span>月度净补库</span><strong><AnimatedNumber :value="netInventoryChange" :formatter="formatSignedTon" :animation-key="refreshVersion" /> 吨</strong><em>今日净变化 <AnimatedNumber :value="todayFlowBalance" :formatter="formatSignedTon" :animation-key="refreshVersion" /> 吨</em></div>
           </article>
 
-          <article class="raw-panel raw-posture-panel">
+          <article class="raw-panel raw-posture-panel" role="link" tabindex="0" aria-label="查看全部储罐" @click="navigateTo('/zones')" @keydown.enter.self="navigateTo('/zones')" @keydown.space.self.prevent="navigateTo('/zones')">
             <span class="raw-panel-accent centered-accent" />
-            <header class="raw-panel-title split"><h2>原料库实时储罐状态 <CircleHelp /></h2><div class="raw-panel-head-actions"><p>{{ snapshot?.meta?.areaCount }} 个罐区 · {{ materialTanks.length }} 筒物料 · <b>在线 {{ materialTanks.length }} 台</b></p><button class="raw-panel-link" type="button" aria-label="查看全部储罐" @click="navigateTo('/zones')">查看全部<ChevronRight /></button></div></header>
+            <header class="raw-panel-title split"><h2>原料库实时储罐状态 <CircleHelp /></h2><div class="raw-panel-head-actions"><p><AnimatedNumber :value="snapshot?.meta?.areaCount" :formatter="formatInteger" :animation-key="refreshVersion" /> 个罐区 · <AnimatedNumber :value="materialTanks.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 筒物料 · <b>在线 <AnimatedNumber :value="materialTanks.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 台</b></p></div></header>
             <div class="raw-silo-overview" :aria-label="`${materialTanks.length} 个原料筒实时存量概况`">
               <article
                 v-for="(tank, index) in materialTanks"
@@ -322,78 +342,76 @@ onBeforeUnmount(() => {
                 <div class="raw-silo-card-body">
                   <div class="raw-silo-model"><IndustrialTank :fill-rate="tank.fillRate" :material-form="tank.materialForm" :animation-key="refreshVersion" /></div>
                   <div class="raw-silo-copy">
-                    <strong class="raw-silo-rate">{{ formatPercent(tank.fillRate, 0) }}<em>占用率</em></strong>
-                    <strong class="raw-silo-quantity">{{ formatTon(tank.onHand) }}<em>吨</em></strong>
-                    <p>可用 {{ formatTon(tank.available) }} 吨</p>
-                    <dl><div><dt>罐容</dt><dd>{{ tank.capacityTon }} 吨</dd></div><div><dt>物料密度</dt><dd>{{ tank.density.toFixed(2) }} t/m³</dd></div></dl>
+                    <strong class="raw-silo-rate"><AnimatedNumber :value="tank.fillRate" :formatter="(value) => formatPercent(value, 0)" :animation-key="refreshVersion" /><em>占用率</em></strong>
+                    <strong class="raw-silo-quantity"><AnimatedNumber :value="tank.onHand" :formatter="formatTon" :animation-key="refreshVersion" /><em>吨</em></strong>
+                    <p>可用 <AnimatedNumber :value="tank.available" :formatter="formatTon" :animation-key="refreshVersion" /> 吨</p>
+                    <dl><div><dt>罐容</dt><dd><AnimatedNumber :value="tank.capacityTon" :formatter="formatInteger" :animation-key="refreshVersion" /> 吨</dd></div><div><dt>物料密度</dt><dd><AnimatedNumber :value="tank.density" :formatter="formatTwoDecimals" :animation-key="refreshVersion" /> t/m³</dd></div></dl>
                   </div>
                 </div>
                 <div class="raw-silo-progress" aria-hidden="true"><i :style="{ width: formatPercent(tank.fillRate, 0) }" /></div>
               </article>
             </div>
             <div class="raw-posture-metrics">
-              <div><span>筒内总量</span><strong>{{ formatTon(summary.stockOnHandTon) }}</strong><small>吨</small></div>
-              <div><span>可用库存</span><strong>{{ formatTon(summary.stockAvailableTon) }}</strong><small>吨</small></div>
-              <div><span>预留库存</span><strong>{{ formatTon(summary.stockReservedTon) }}</strong><small>吨</small></div>
-              <div><span>冻结库存</span><strong>{{ formatTon(summary.stockFrozenTon) }}</strong><small>吨</small></div>
-              <button class="raw-posture-link" type="button" aria-label="查看罐区详情" @click="navigateTo('/zones')">查看罐区详情<ChevronRight /></button>
+              <div><span>筒内总量</span><strong><AnimatedNumber :value="summary.stockOnHandTon" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
+              <div><span>可用库存</span><strong><AnimatedNumber :value="summary.stockAvailableTon" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
+              <div><span>预留库存</span><strong><AnimatedNumber :value="summary.stockReservedTon" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
+              <div><span>冻结库存</span><strong><AnimatedNumber :value="summary.stockFrozenTon" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
             </div>
           </article>
 
-          <article class="raw-panel raw-month-panel">
+          <article class="raw-panel raw-month-panel" role="link" tabindex="0" aria-label="查看本月保障详情" @click="navigateTo('/performance')" @keydown.enter.self="navigateTo('/performance')" @keydown.space.self.prevent="navigateTo('/performance')">
             <span class="raw-panel-accent" />
-            <header class="raw-panel-title split"><h2>本月保障能力</h2><div class="raw-panel-head-actions"><p>31 天历史口径</p><button class="raw-panel-link" type="button" aria-label="查看本月保障详情" @click="navigateTo('/performance')">查看详情<ChevronRight /></button></div></header>
+            <header class="raw-panel-title split"><h2>本月保障能力</h2><div class="raw-panel-head-actions"><p>31 天历史口径</p></div></header>
             <div class="raw-month-section-label"><span>今日运营概况</span><em>实时保障节奏</em></div>
             <div class="raw-month-overview">
               <div class="is-orders">
                 <span class="raw-month-icon"><ClipboardList /></span>
-                <div class="raw-month-primary"><span>收发单量</span><strong>{{ formatNumber(monthOrderTotal) }}<small>单</small></strong><em>日均 {{ formatNumber(monthDailyOrders) }}</em></div>
-                <div class="raw-month-breakdown"><span><i>入库</i><b>{{ formatNumber(summary.monthInboundOrders) }}</b></span><span><i>出库</i><b>{{ formatNumber(summary.monthOutboundOrders) }}</b></span></div>
+                <div class="raw-month-primary"><span>收发单量</span><strong><AnimatedNumber :value="monthOrderTotal" :formatter="formatInteger" :animation-key="refreshVersion" /><small>单</small></strong><em>日均 <AnimatedNumber :value="monthDailyOrders" :formatter="formatInteger" :animation-key="refreshVersion" /></em></div>
+                <div class="raw-month-breakdown"><span><i>入库</i><b><AnimatedNumber :value="summary.monthInboundOrders" :formatter="formatInteger" :animation-key="refreshVersion" /></b></span><span><i>出库</i><b><AnimatedNumber :value="summary.monthOutboundOrders" :formatter="formatInteger" :animation-key="refreshVersion" /></b></span></div>
               </div>
               <div class="is-tasks">
                 <span class="raw-month-icon"><Forklift /></span>
-                <div class="raw-month-primary"><span>搬运任务</span><strong>{{ formatNumber(monthHandlingTotal) }}<small>项</small></strong><em>日均 {{ formatNumber(monthDailyHandling) }}</em></div>
-                <div class="raw-month-breakdown"><span><i>拣货</i><b>{{ formatNumber(summary.monthPickingTasks) }}</b></span><span><i>叉车</i><b>{{ formatNumber(summary.monthForkliftTasks) }}</b></span></div>
+                <div class="raw-month-primary"><span>搬运任务</span><strong><AnimatedNumber :value="monthHandlingTotal" :formatter="formatInteger" :animation-key="refreshVersion" /><small>项</small></strong><em>日均 <AnimatedNumber :value="monthDailyHandling" :formatter="formatInteger" :animation-key="refreshVersion" /></em></div>
+                <div class="raw-month-breakdown"><span><i>拣货</i><b><AnimatedNumber :value="summary.monthPickingTasks" :formatter="formatInteger" :animation-key="refreshVersion" /></b></span><span><i>叉车</i><b><AnimatedNumber :value="summary.monthForkliftTasks" :formatter="formatInteger" :animation-key="refreshVersion" /></b></span></div>
               </div>
             </div>
             <div class="raw-month-quality">
-              <div><ShieldCheck /><span>库存准确</span><strong>{{ formatPercent(summary.inventoryAccuracy) }}</strong></div>
-              <div><ArrowDownToLine /><span>收货及时</span><strong>{{ formatPercent(summary.receivingTimely) }}</strong></div>
-              <div><ArrowUpFromLine /><span>发运及时</span><strong>{{ formatPercent(summary.deliveryTimely) }}</strong></div>
-              <div><PackageCheck /><span>拣货耗时</span><strong>{{ summary.avgPickingMinutes }}<small>分</small></strong></div>
+              <div><ShieldCheck /><span>库存准确</span><strong><AnimatedNumber :value="summary.inventoryAccuracy" :formatter="formatPercent" :animation-key="refreshVersion" /></strong></div>
+              <div><ArrowDownToLine /><span>收货及时</span><strong><AnimatedNumber :value="summary.receivingTimely" :formatter="formatPercent" :animation-key="refreshVersion" /></strong></div>
+              <div><ArrowUpFromLine /><span>发运及时</span><strong><AnimatedNumber :value="summary.deliveryTimely" :formatter="formatPercent" :animation-key="refreshVersion" /></strong></div>
+              <div><PackageCheck /><span>拣货耗时</span><strong><AnimatedNumber :value="summary.avgPickingMinutes" :formatter="formatOneDecimal" :animation-key="refreshVersion" /><small>分</small></strong></div>
             </div>
             <div class="raw-month-foot">
-              <span><Timer /><em>收货耗时</em><strong>{{ summary.avgReceiptMinutes }} 分</strong></span>
-              <span><ClipboardList /><em>日均单量</em><strong>{{ formatNumber(monthDailyOrders) }} 单</strong></span>
-              <span><Clock3 /><em>累计加班</em><strong>{{ summary.overtimeHours }}h</strong></span>
+              <span><Timer /><em>收货耗时</em><strong><AnimatedNumber :value="summary.avgReceiptMinutes" :formatter="formatOneDecimal" :animation-key="refreshVersion" /> 分</strong></span>
+              <span><ClipboardList /><em>日均单量</em><strong><AnimatedNumber :value="monthDailyOrders" :formatter="formatInteger" :animation-key="refreshVersion" /> 单</strong></span>
+              <span><Clock3 /><em>累计加班</em><strong><AnimatedNumber :value="summary.overtimeHours" :formatter="formatOneDecimal" :animation-key="refreshVersion" />h</strong></span>
             </div>
           </article>
 
-          <article class="raw-panel raw-zone-panel">
+          <article class="raw-panel raw-zone-panel" role="link" tabindex="0" aria-label="查看全部库区" @click="navigateTo('/zones')" @keydown.enter.self="navigateTo('/zones')" @keydown.space.self.prevent="navigateTo('/zones')">
             <span class="raw-panel-accent centered-accent" />
-            <header class="raw-panel-title split"><h2>库区空间压力</h2><div class="raw-panel-head-actions"><p>容量 · 责任人</p><button class="raw-panel-link" type="button" aria-label="查看全部库区" @click="navigateTo('/zones')">查看全部<ChevronRight /></button></div></header>
+            <header class="raw-panel-title split"><h2>库区空间压力</h2><div class="raw-panel-head-actions"><p>容量 · 责任人</p></div></header>
             <div class="raw-zone-overview">
-              <div><span>加权占用率</span><strong>{{ formatPercent(summary.occupancy) }}</strong><small>{{ formatNumber(summary.occupiedLocations) }} / {{ formatNumber(snapshot?.meta?.capacityLocations) }} 库位</small></div>
-              <p><i class="danger" />高风险 {{ zones.filter((zone) => zone.status === '高风险').length }} 区<i class="warning" />偏高 {{ zones.filter((zone) => zone.status === '偏高').length }} 区</p>
+              <div><span>加权占用率</span><strong><AnimatedNumber :value="summary.occupancy" :formatter="formatPercent" :animation-key="refreshVersion" /></strong><small><AnimatedNumber :value="summary.occupiedLocations" :formatter="formatInteger" :animation-key="refreshVersion" /> / <AnimatedNumber :value="snapshot?.meta?.capacityLocations" :formatter="formatInteger" :animation-key="refreshVersion" /> 库位</small></div>
+              <p><i class="danger" />高风险 <AnimatedNumber :value="zones.filter((zone) => zone.status === '高风险').length" :formatter="formatInteger" :animation-key="refreshVersion" /> 区<i class="warning" />偏高 <AnimatedNumber :value="zones.filter((zone) => zone.status === '偏高').length" :formatter="formatInteger" :animation-key="refreshVersion" /> 区</p>
             </div>
             <div class="raw-zone-grid">
               <div v-for="zone in rankedZones" :key="zone.code" class="raw-zone-card" :class="statusClass(zone.status)">
-                <header><span><strong>{{ zone.code }}</strong><small>{{ zone.name }}</small></span><em :class="statusClass(zone.status)">{{ formatPercent(zone.occupancy) }}</em></header>
+                <header><span><strong>{{ zone.code }}</strong><small>{{ zone.name }}</small></span><em :class="statusClass(zone.status)"><AnimatedNumber :value="zone.occupancy" :formatter="formatPercent" :animation-key="refreshVersion" /></em></header>
                 <div><i :class="statusClass(zone.status)" :style="{ width: formatPercent(zone.occupancy) }" /></div>
-                <p><span>已用 {{ zone.occupied }}/{{ zone.capacity }}</span><b>可用 {{ zone.available }}</b></p>
-                <footer><span>{{ zone.owner }}</span><span>{{ zone.materialTypes }} 类物料</span><strong v-if="zone.abnormalLocations">异常 {{ zone.abnormalLocations }}</strong><em v-else-if="zone.frozenQty">冻结 {{ zone.frozenQty }}</em><small v-else>状态正常</small></footer>
+                <p><span>已用 <AnimatedNumber :value="zone.occupied" :formatter="formatInteger" :animation-key="refreshVersion" />/<AnimatedNumber :value="zone.capacity" :formatter="formatInteger" :animation-key="refreshVersion" /></span><b>可用 <AnimatedNumber :value="zone.available" :formatter="formatInteger" :animation-key="refreshVersion" /></b></p>
+                <footer><span>{{ zone.owner }}</span><span><AnimatedNumber :value="zone.materialTypes" :formatter="formatInteger" :animation-key="refreshVersion" /> 类物料</span><strong v-if="zone.abnormalLocations">异常 <AnimatedNumber :value="zone.abnormalLocations" :formatter="formatInteger" :animation-key="refreshVersion" /></strong><em v-else-if="zone.frozenQty">冻结 <AnimatedNumber :value="zone.frozenQty" :formatter="formatInteger" :animation-key="refreshVersion" /></em><small v-else>状态正常</small></footer>
               </div>
             </div>
-            <div class="raw-zone-foot"><button class="raw-panel-link" type="button" aria-label="查看库位明细" @click="navigateTo('/zones')">库位明细<ChevronRight /></button></div>
           </article>
 
-          <article class="raw-panel raw-risk-panel">
+          <article class="raw-panel raw-risk-panel" role="link" tabindex="0" aria-label="查看全部风险异常" @click="navigateTo('/exceptions')" @keydown.enter.self="navigateTo('/exceptions')" @keydown.space.self.prevent="navigateTo('/exceptions')">
             <span class="raw-panel-accent" />
-            <header class="raw-panel-title split"><h2>服务质量与风险</h2><div class="raw-panel-head-actions"><p>目标达成与异常明细</p><button class="raw-panel-link" type="button" aria-label="查看全部风险异常" @click="navigateTo('/exceptions')">查看全部<ChevronRight /></button></div></header>
+            <header class="raw-panel-title split"><h2>服务质量与风险</h2><div class="raw-panel-head-actions"><p>目标达成与异常明细</p></div></header>
             <div class="raw-target-strip">
-              <div v-for="target in riskTargetRows" :key="target.key"><span>{{ target.name }}</span><strong :class="{ warning: !target.met }">{{ target.display }}</strong><small>{{ target.target }}</small></div>
+              <div v-for="target in riskTargetRows" :key="target.key"><span>{{ target.name }}</span><strong :class="{ warning: !target.met }"><AnimatedNumber :value="target.value" :formatter="target.formatter" :animation-key="refreshVersion" />{{ target.unit }}</strong><small>{{ target.target }}</small></div>
             </div>
-            <div class="raw-alert-subhead"><span>异常事件（按时间降序）</span><em>共 {{ alerts.length }} 条</em></div>
+            <div class="raw-alert-subhead"><span>异常事件（按时间降序）</span><em>共 <AnimatedNumber :value="alerts.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</em></div>
             <div
               ref="alertViewport"
               class="raw-alert-viewport"
@@ -411,13 +429,13 @@ onBeforeUnmount(() => {
                 <div v-for="alert in alerts" :key="alert.id" class="raw-alert-list-item" :class="{ 'is-breached': alert.slaBreached }" role="listitem">
                   <span :class="alert.slaBreached || alert.severity === '紧急' || alert.severity === '重要' ? 'danger' : 'warning'"><AlertTriangle :size="12" /></span>
                   <div><strong>{{ alert.type }} · {{ alert.material }}</strong><small><b>{{ alert.slaBreached ? 'SLA 超时' : alert.severity }}</b>{{ alert.areaCode }} · {{ alert.action }} · {{ alert.owner }}</small></div>
-                  <div class="raw-alert-end"><em>{{ alert.durationHours }}h</em><span :class="alertLevelClass(alert)">{{ alertLevelLabel(alert) }}</span></div>
+                  <div class="raw-alert-end"><em><AnimatedNumber :value="alert.durationHours" :formatter="formatOneDecimal" :animation-key="refreshVersion" />h</em><span :class="alertLevelClass(alert)">{{ alertLevelLabel(alert) }}</span></div>
                 </div>
               </div>
             </div>
             <div class="raw-risk-foot">
-              <div class="raw-risk-summary"><strong>全部异常 {{ alerts.length }} 条</strong><span class="danger">高风险 {{ alertSeverityCounts.high }} 条</span><span class="warning">中风险 {{ alertSeverityCounts.medium }} 条</span><span>低风险 {{ alertSeverityCounts.low }} 条</span></div>
-              <p><span>{{ Math.min(visibleAlertIndex + 1, alerts.length) }}/{{ alerts.length }}</span><button class="raw-risk-sla" type="button" aria-label="查看 SLA 超时异常" @click="navigateTo('/exceptions')">SLA 超时 <strong>{{ breachedAlertCount }}</strong></button></p>
+              <div class="raw-risk-summary"><strong>全部异常 <AnimatedNumber :value="alerts.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</strong><span class="danger">高风险 <AnimatedNumber :value="alertSeverityCounts.high" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</span><span class="warning">中风险 <AnimatedNumber :value="alertSeverityCounts.medium" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</span><span>低风险 <AnimatedNumber :value="alertSeverityCounts.low" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</span></div>
+              <p><span><AnimatedNumber :value="Math.min(visibleAlertIndex + 1, alerts.length)" :formatter="formatInteger" :animation-key="refreshVersion" />/<AnimatedNumber :value="alerts.length" :formatter="formatInteger" :animation-key="refreshVersion" /></span><span class="raw-risk-sla">SLA 超时 <strong><AnimatedNumber :value="breachedAlertCount" :formatter="formatInteger" :animation-key="refreshVersion" /></strong></span></p>
             </div>
           </article>
         </div>
@@ -596,7 +614,7 @@ onBeforeUnmount(() => {
 .raw-today-pair > div:last-child { border-left: 2px dashed var(--rm-flow-out); }
 .raw-today-pair > div:first-child strong { color: #bdfbf5; }
 .raw-today-pair > div:last-child strong { color: #ffd98b; }
-.raw-today-pair span { display: block; color: var(--rm-muted); font-size: clamp(9px, .58cqw, 10px); }
+.raw-today-pair > div > span { display: block; color: var(--rm-muted); font-size: clamp(9px, .58cqw, 10px); }
 .raw-today-pair strong { display: inline-block; margin-top: 3px; font: 720 clamp(21px, 1.5cqw, 27px)/1 "Bahnschrift", "Segoe UI", sans-serif; }
 .raw-today-pair small { margin-left: 4px; color: var(--rm-muted); font-size: clamp(8px, .55cqw, 10px); }
 .raw-trend-chart { position: relative; z-index: 2; width: calc(100% - 8px) !important; max-width: calc(100% - 8px); height: clamp(150px, 13cqw, 235px) !important; overflow: hidden; margin: 0 4px; }
@@ -662,7 +680,7 @@ onBeforeUnmount(() => {
 .raw-posture-metrics { position: relative; z-index: 2; display: grid; flex: 0 0 auto; grid-template-columns: repeat(4, 1fr); margin: 0 12px; overflow: hidden; border: 1px solid var(--rm-line); border-radius: 10px; }
 .raw-posture-metrics > div { min-width: 0; min-height: 38px; padding: 5px 4px; border-right: 1px solid var(--rm-line); text-align: center; }
 .raw-posture-metrics > div:last-child { border-right: 0; }
-.raw-posture-metrics span { display: block; color: var(--rm-muted); font-size: clamp(8px, .54cqw, 10px); }
+.raw-posture-metrics > div > span { display: block; color: var(--rm-muted); font-size: clamp(8px, .54cqw, 10px); }
 .raw-posture-metrics strong { display: inline-block; max-width: calc(100% - 18px); margin-top: 3px; overflow: hidden; font: 720 clamp(13px, .86cqw, 17px)/1 "Bahnschrift", "Segoe UI", sans-serif; text-overflow: ellipsis; vertical-align: bottom; white-space: nowrap; }
 .raw-posture-metrics small { margin-left: 3px; color: var(--rm-muted); font-size: clamp(8px, .52cqw, 9px); }
 
@@ -696,7 +714,7 @@ onBeforeUnmount(() => {
 .raw-month-quality > div { display: grid; min-width: 0; grid-template-columns: 13px minmax(0, 1fr); align-items: center; padding: 5px 4px 4px; border-right: 1px solid rgba(126,166,191,.13); text-align: left; }
 .raw-month-quality > div:last-child { border-right: 0; }
 .raw-month-quality svg { width: 11px; height: 11px; color: var(--rm-accent); stroke-width: 1.8; }
-.raw-month-quality span { overflow: hidden; color: var(--rm-muted); font-size: clamp(6px, .42cqw, 8px); text-overflow: ellipsis; white-space: nowrap; }
+.raw-month-quality > div > span { overflow: hidden; color: var(--rm-muted); font-size: clamp(6px, .42cqw, 8px); text-overflow: ellipsis; white-space: nowrap; }
 .raw-month-quality strong { grid-column: 1 / -1; margin-top: 3px; color: var(--rm-accent); font: 720 clamp(11px, .72cqw, 14px)/1 "Bahnschrift", "Segoe UI", sans-serif; text-align: center; white-space: nowrap; }
 .raw-month-quality small { margin-left: 2px; color: var(--rm-dim); font-size: .56em; }
 .raw-month-foot { position: relative; z-index: 2; display: grid; flex: 0 0 auto; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 5px 9px 7px; border-top: 1px solid rgba(126,166,191,.11); color: var(--rm-muted); text-align: center; }
@@ -706,16 +724,17 @@ onBeforeUnmount(() => {
 .raw-month-foot strong { grid-column: 1 / -1; margin-top: 2px; color: var(--rm-text); font: 700 clamp(10px, .64cqw, 12px) "Bahnschrift", "Segoe UI", sans-serif; }
 
 .raw-zone-panel { display: flex; flex-direction: column; }
-.raw-zone-overview { position: relative; z-index: 2; display: flex; flex: 0 0 auto; align-items: flex-end; justify-content: space-between; padding: 1px 12px 7px; border-bottom: 1px solid var(--rm-line); }
-.raw-zone-overview > div span { display: block; color: var(--rm-muted); font-size: clamp(8px, .54cqw, 10px); }
+.raw-zone-overview { position: relative; z-index: 2; display: flex; min-height: 58px; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 3px 12px 7px; border-bottom: 1px solid var(--rm-line); }
+.raw-zone-overview > div { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: end; column-gap: 7px; }
+.raw-zone-overview > div > span { grid-column: 1 / -1; display: block; color: var(--rm-muted); font-size: clamp(8px, .54cqw, 10px); }
 .raw-zone-overview > div strong { display: inline-block; margin-top: 2px; color: var(--rm-warning); font: 740 clamp(23px, 1.5cqw, 27px)/1 "Bahnschrift", "Segoe UI", sans-serif; }
-.raw-zone-overview > div small { margin-left: 6px; color: var(--rm-dim); font-size: clamp(8px, .5cqw, 9px); }
-.raw-zone-overview p { display: flex; align-items: center; gap: 5px; margin: 0; color: var(--rm-muted); font-size: clamp(8px, .5cqw, 9px); }
+.raw-zone-overview > div small { min-width: 0; margin: 0; overflow: hidden; color: var(--rm-dim); font-size: clamp(8px, .5cqw, 9px); text-overflow: ellipsis; white-space: nowrap; }
+.raw-zone-overview p { display: flex; flex: 0 0 auto; align-items: center; gap: 5px; margin: 0; color: var(--rm-muted); font-size: clamp(8px, .5cqw, 9px); white-space: nowrap; }
 .raw-zone-overview p i { width: 6px; height: 6px; border-radius: 50%; }
 .raw-zone-overview p i.danger { background: var(--rm-danger); }
 .raw-zone-overview p i.warning { margin-left: 5px; background: var(--rm-warning); }
-.raw-zone-grid { position: relative; z-index: 2; display: grid; min-height: 0; flex: 1; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 5px; padding: 7px 9px 9px; }
-.raw-zone-card { display: flex; min-width: 0; min-height: 0; flex-direction: column; justify-content: space-between; padding: 6px 7px; border: 1px solid rgba(101,161,201,.16); border-radius: 8px; text-align: left; background: var(--rm-inner-surface); box-shadow: inset 2px 0 rgba(52,218,198,.3); }
+.raw-zone-grid { position: relative; z-index: 2; display: grid; min-height: 0; flex: 1; grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); gap: 6px; overflow: hidden; padding: 7px 9px 9px; }
+.raw-zone-card { display: flex; min-width: 0; min-height: 0; flex-direction: column; justify-content: space-between; padding: 6px 7px; overflow: hidden; border: 1px solid rgba(101,161,201,.16); border-radius: 8px; text-align: left; background: var(--rm-inner-surface); box-shadow: inset 2px 0 rgba(52,218,198,.3); }
 .raw-zone-card.danger { border-color: rgba(251,113,133,.24); box-shadow: inset 2px 0 rgba(251,113,133,.72); }
 .raw-zone-card.warning { border-color: rgba(244,184,74,.22); box-shadow: inset 2px 0 rgba(244,184,74,.68); }
 .raw-zone-card header { display: flex; min-width: 0; align-items: flex-start; justify-content: space-between; gap: 5px; }
@@ -733,9 +752,9 @@ onBeforeUnmount(() => {
 .raw-zone-card > div i.normal { background: var(--rm-accent); }
 .raw-zone-card p { display: flex; justify-content: space-between; gap: 3px; margin: 4px 0 0; color: var(--rm-dim); font-size: clamp(7px, .45cqw, 9px); }
 .raw-zone-card p b { color: var(--rm-muted); font-weight: 600; white-space: nowrap; }
-.raw-zone-card footer { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; gap: 3px 6px; margin-top: 5px; padding-top: 4px; border-top: 1px solid rgba(126,166,191,.11); color: var(--rm-muted); font-size: clamp(7px, .43cqw, 8px); }
-.raw-zone-card footer span { white-space: nowrap; }
-.raw-zone-card footer strong, .raw-zone-card footer em, .raw-zone-card footer small { margin: 0 0 0 auto; font-size: inherit; font-style: normal; white-space: nowrap; }
+.raw-zone-card footer { display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: repeat(2, auto); align-items: center; gap: 2px 6px; margin-top: 5px; padding-top: 4px; border-top: 1px solid rgba(126,166,191,.11); color: var(--rm-muted); font-size: clamp(7px, .43cqw, 8px); }
+.raw-zone-card footer > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.raw-zone-card footer strong, .raw-zone-card footer em, .raw-zone-card footer small { grid-column: 2; grid-row: 1 / span 2; align-self: center; margin: 0; font-size: inherit; font-style: normal; white-space: nowrap; }
 .raw-zone-card footer strong { color: var(--rm-danger); }
 .raw-zone-card footer em { color: var(--rm-warning); }
 .raw-zone-card footer small { color: var(--rm-accent); }
@@ -743,7 +762,7 @@ onBeforeUnmount(() => {
 .raw-target-strip { position: relative; z-index: 2; display: grid; grid-template-columns: repeat(3, 1fr); margin: 1px 11px 7px; overflow: hidden; border: 1px solid var(--rm-line); border-radius: 9px; background: var(--rm-soft-surface); box-shadow: inset 0 1px rgba(255,255,255,.045); }
 .raw-target-strip > div { padding: 8px 4px; border-right: 1px solid var(--rm-line); text-align: center; }
 .raw-target-strip > div:last-child { border-right: 0; }
-.raw-target-strip span, .raw-target-strip small { display: block; color: var(--rm-muted); font-size: clamp(8px, .52cqw, 9px); }
+.raw-target-strip > div > span, .raw-target-strip > div > small { display: block; color: var(--rm-muted); font-size: clamp(8px, .52cqw, 9px); }
 .raw-target-strip strong { display: block; margin: 4px 0 2px; color: var(--rm-accent); font: 720 clamp(14px, .9cqw, 16px) "Bahnschrift", "Segoe UI", sans-serif; }
 .raw-target-strip strong.warning { color: var(--rm-warning); }
 .raw-target-strip strong.warning + small { color: #e6bc6a; }
@@ -777,6 +796,20 @@ onBeforeUnmount(() => {
 .raw-risk-foot p strong { margin-left: 4px; color: var(--rm-danger); }
 
 .raw-board, .raw-panel, .raw-kpi-strip article, .raw-today-pair > div, .raw-silo-overview, .raw-month-overview > div, .raw-zone-card { transition: border-color .3s ease, box-shadow .3s ease, background-color .3s ease; }
+.raw-kpi-card[role="link"],
+.raw-panel[role="link"] {
+  cursor: pointer;
+  outline: none;
+  transform: translateZ(0);
+  transform-origin: center;
+  transition: transform .2s cubic-bezier(.16, 1, .3, 1), border-color .2s ease, box-shadow .2s ease;
+}
+.raw-kpi-card[role="link"]:hover,
+.raw-kpi-card[role="link"]:focus-visible { z-index: 5; transform: scale(1.008); border-color: color-mix(in srgb, var(--rm-accent) 52%, transparent); box-shadow: var(--rm-kpi-shadow), 0 0 0 1px color-mix(in srgb, var(--rm-accent) 18%, transparent); }
+.raw-panel[role="link"]:hover,
+.raw-panel[role="link"]:focus-visible { z-index: 4; transform: scale(1.004); border-color: color-mix(in srgb, var(--rm-accent) 52%, transparent); box-shadow: var(--rm-panel-shadow), 0 0 0 1px color-mix(in srgb, var(--rm-accent) 20%, transparent); }
+.raw-kpi-card[role="link"]:active { transform: scale(.99); }
+.raw-panel[role="link"]:active { transform: scale(.996); }
 
 .raw-material-page[data-theme="glacier"] {
   --rm-page-surface:
@@ -1463,27 +1496,6 @@ onBeforeUnmount(() => {
   -webkit-backdrop-filter: none;
 }
 .raw-kpi-strip article > div { min-width: 0; }
-.raw-kpi-arrow {
-  position: absolute;
-  z-index: 3;
-  top: 50%;
-  right: 5px;
-  display: grid;
-  width: 32px;
-  height: 44px;
-  place-items: center;
-  cursor: pointer;
-  border: 0;
-  color: #6d9bad;
-  background: transparent;
-  transform: translateY(-50%);
-  transition: color .18s ease, transform .18s ease;
-}
-.raw-kpi-arrow svg { width: 16px; height: 16px; stroke-width: 1.7; }
-.raw-kpi-arrow:hover,
-.raw-kpi-arrow:focus-visible { outline: none; color: var(--rm-accent); transform: translate(2px, -50%); }
-.raw-kpi-card.is-warning .raw-kpi-arrow { color: #c49b47; }
-.raw-kpi-card.is-danger .raw-kpi-arrow { color: #ce6674; }
 .raw-kpi-card::after { right: auto; width: 3px; height: 100%; opacity: .72; }
 .raw-kpi-card.is-warning::after,
 .raw-kpi-card.is-danger::after { height: 100%; }
@@ -1508,7 +1520,7 @@ onBeforeUnmount(() => {
 
 .raw-board-grid {
   grid-template-columns: repeat(30, minmax(0, 1fr));
-  grid-template-rows: minmax(0, .96fr) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1.1fr) minmax(0, .9fr);
   gap: clamp(7px, .65cqw, 11px);
 }
 .raw-flow-panel { grid-column: span 12; }
@@ -1538,51 +1550,21 @@ onBeforeUnmount(() => {
 .raw-panel-title p { margin: 0; color: #7393a6; }
 .raw-panel-title p b { margin-left: 6px; color: var(--rm-accent); font-weight: 650; }
 .raw-panel-head-actions { display: flex; min-width: 0; align-items: center; justify-content: flex-end; gap: clamp(7px, .65cqw, 11px); }
-.raw-panel-link,
-.raw-posture-link,
-.raw-risk-sla {
-  display: inline-flex;
-  min-height: 30px;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 0 4px;
-  cursor: pointer;
-  border: 0;
-  border-radius: 5px;
-  color: #71bed3;
-  font: 600 clamp(8px, .52cqw, 10px) "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
-  white-space: nowrap;
-  background: transparent;
-  transition: color .18s ease, background-color .18s ease, transform .18s ease;
-}
-.raw-panel-link svg,
-.raw-posture-link svg { width: 13px; height: 13px; stroke-width: 1.8; }
-.raw-panel-link:hover,
-.raw-panel-link:focus-visible,
-.raw-posture-link:hover,
-.raw-posture-link:focus-visible,
-.raw-risk-sla:hover,
-.raw-risk-sla:focus-visible { outline: none; color: var(--rm-accent); background: rgba(18, 213, 204, .07); }
-.raw-panel-link:active,
-.raw-posture-link:active { transform: translateX(1px); }
-
 .raw-today-pair { grid-template-columns: 1fr 1fr .92fr; gap: 6px; margin: 8px 12px 0; }
 .raw-today-pair > div { position: relative; min-width: 0; padding: 7px 9px; border-radius: 7px; }
 .raw-today-pair > div:last-child { border-left: 1px solid var(--rm-line); }
 .raw-today-pair > div:last-child strong { color: var(--rm-accent); }
 .raw-today-pair > div:last-child em { display: block; margin-top: 2px; color: var(--rm-dim); font-size: 7px; font-style: normal; }
 .raw-today-pair strong { font-size: clamp(18px, 1.45cqw, 25px); }
-.raw-trend-chart { min-height: 0; flex: 1 1 auto; height: clamp(150px, 11.8cqw, 198px) !important; margin-top: 1px; }
-.raw-flow-foot { min-height: 32px; padding: 3px 9px 4px 13px; }
-.raw-flow-foot .raw-panel-link { margin-left: 2px; }
+.raw-trend-chart { min-height: 165px; max-height: 215px; flex: 1 0 165px; height: clamp(165px, 12.5cqw, 215px) !important; margin-top: 1px; }
+.raw-flow-foot { min-height: 30px; padding: 3px 9px 2px 13px; }
 
 .raw-posture-panel { padding-bottom: 5px; }
 .raw-silo-overview {
   gap: clamp(5px, .55cqw, 9px);
   margin: 9px 9px 7px;
   padding: 0;
-  overflow: visible;
+  overflow: hidden;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1728,9 +1710,8 @@ onBeforeUnmount(() => {
 .raw-silo-copy dd { color: #a4bdca; white-space: nowrap; }
 .raw-silo-progress { position: relative; z-index: 4; height: 5px; flex: 0 0 5px; margin-top: 6px; overflow: hidden; border-radius: 4px; background: rgba(91, 124, 143, .25); box-shadow: inset 0 1px 2px rgba(0,0,0,.32); }
 .raw-silo-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--material-bottom), var(--material-top)); box-shadow: 0 0 8px var(--material-glow); }
-.raw-posture-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)) auto; margin: 0 9px; overflow: hidden; border: 1px solid rgba(9, 102, 139, .32); border-radius: 7px; }
+.raw-posture-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 9px; overflow: hidden; border: 1px solid rgba(9, 102, 139, .32); border-radius: 7px; }
 .raw-posture-metrics > div { min-height: clamp(34px, 2.55cqw, 43px); }
-.raw-posture-link { min-width: clamp(86px, 7cqw, 118px); border-left: 1px solid var(--rm-line); border-radius: 0; }
 
 .raw-month-section-label { position: relative; z-index: 2; display: flex; min-height: 26px; align-items: center; justify-content: space-between; margin: 0 9px; padding: 3px 7px 2px; border-bottom: 1px solid rgba(14, 105, 143, .22); }
 .raw-month-section-label span { color: #9ab5c4; font-size: clamp(8px, .58cqw, 10px); font-weight: 650; }
@@ -1748,15 +1729,14 @@ onBeforeUnmount(() => {
 .raw-month-quality { grid-template-columns: repeat(4, minmax(0, 1fr)); min-height: 62px; margin-bottom: 6px; border-radius: 7px; }
 .raw-month-quality > div { grid-template-columns: 15px minmax(0, 1fr); padding: 7px 3px 6px; }
 .raw-month-quality svg { width: 13px; height: 13px; }
-.raw-month-quality span { font-size: clamp(7px, .48cqw, 9px); }
+.raw-month-quality > div > span { font-size: clamp(7px, .48cqw, 9px); }
 .raw-month-quality strong { margin-top: 5px; font-size: clamp(13px, .84cqw, 16px); }
 .raw-month-foot { min-height: 48px; padding: 7px 10px 8px; }
 .raw-month-foot svg { width: 12px; height: 12px; }
 .raw-month-foot em { font-size: clamp(7px, .46cqw, 8px); }
 .raw-month-foot strong { margin-top: 4px; font-size: clamp(11px, .72cqw, 14px); }
 .raw-zone-overview { padding-top: 6px; }
-.raw-zone-grid { gap: 5px; }
-.raw-zone-foot { position: relative; z-index: 2; display: flex; min-height: 30px; flex: 0 0 auto; align-items: center; justify-content: flex-end; padding: 0 10px 2px; border-top: 1px solid rgba(14, 105, 143, .25); }
+.raw-zone-grid { gap: 6px; }
 .raw-zone-card { border-radius: 6px; box-shadow: none; }
 .raw-zone-card.danger { box-shadow: inset 0 2px var(--rm-danger); }
 .raw-zone-card.warning { box-shadow: inset 0 2px var(--rm-warning); }
@@ -1764,8 +1744,8 @@ onBeforeUnmount(() => {
 .raw-target-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 5px; margin-bottom: 5px; border-radius: 7px; }
 .raw-target-strip > div { min-width: 0; padding: 5px 3px; }
 .raw-target-strip strong { margin: 3px 0 2px; }
-.raw-target-strip span,
-.raw-target-strip small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.raw-target-strip > div > span,
+.raw-target-strip > div > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .raw-alert-subhead { position: relative; z-index: 2; display: flex; min-height: 20px; flex: 0 0 20px; align-items: center; justify-content: space-between; padding: 1px 12px 2px; border-top: 1px solid rgba(14, 105, 143, .18); color: #7b9aab; font-size: clamp(7px, .48cqw, 9px); }
 .raw-alert-subhead em { color: #9eb4c0; font-style: normal; }
 .raw-alert-list { gap: 4px; padding-right: 8px; }
@@ -1794,7 +1774,7 @@ onBeforeUnmount(() => {
 .raw-risk-summary span { padding-left: 7px; border-left: 1px solid var(--rm-line); white-space: nowrap; }
 .raw-risk-summary span.danger { color: var(--rm-danger); }
 .raw-risk-summary span.warning { color: var(--rm-warning); }
-.raw-risk-sla { min-height: 26px; margin: -2px -3px -2px 0; padding: 0 7px; border: 1px solid rgba(28, 109, 142, .38); color: #86a8b8; background: rgba(3, 27, 44, .68); }
+.raw-risk-sla { display: inline-flex; min-height: 26px; align-items: center; margin: -2px -3px -2px 0; padding: 0 7px; border: 1px solid rgba(28, 109, 142, .38); border-radius: 5px; color: #86a8b8; background: rgba(3, 27, 44, .68); }
 .raw-risk-sla strong { margin-left: 4px; color: var(--rm-danger); }
 
 @media (max-width: 1200px) and (min-width: 901px) {
@@ -1808,8 +1788,10 @@ onBeforeUnmount(() => {
 }
 
 @media (max-height: 820px) and (min-width: 901px) {
+  .raw-board-grid { grid-template-rows: minmax(0, 1.05fr) minmax(0, .95fr); }
+  .raw-trend-chart { min-height: 150px; max-height: 200px; flex-basis: 150px; height: clamp(150px, 11.5cqw, 200px) !important; }
   .raw-month-section-label { min-height: 20px; padding: 1px 6px; }
-  .raw-month-overview { grid-template-rows: repeat(2, minmax(47px, 1fr)); gap: 4px; margin: 3px 8px 4px; }
+  .raw-month-overview { grid-template-rows: repeat(2, minmax(45px, 1fr)); gap: 4px; margin: 3px 8px 6px; }
   .raw-month-overview > div { min-height: 0; grid-template-columns: 30px minmax(0, 1fr) auto; gap: 5px; padding: 4px 6px; }
   .raw-month-icon { width: 29px; height: 29px; }
   .raw-month-icon svg { width: 15px; height: 15px; }
@@ -1822,7 +1804,7 @@ onBeforeUnmount(() => {
   .raw-month-quality { min-height: 46px; margin: 0 8px 4px; }
   .raw-month-quality > div { padding: 4px 2px 3px; }
   .raw-month-quality svg { width: 11px; height: 11px; }
-  .raw-month-quality span { font-size: 6px; }
+  .raw-month-quality > div > span { font-size: 6px; }
   .raw-month-quality strong { margin-top: 3px; font-size: 11px; }
   .raw-month-foot { min-height: 38px; padding: 4px 8px 5px; }
   .raw-month-foot svg { width: 10px; height: 10px; }
@@ -1831,6 +1813,14 @@ onBeforeUnmount(() => {
   .raw-alert-subhead { min-height: 18px; flex-basis: 18px; padding-inline: 9px; }
   .raw-alert-list-item { min-height: 32px; padding-block: 2px; }
   .raw-alert-end { gap: 1px; }
+  .raw-zone-card { padding-block: 4px; }
+  .raw-zone-card > div { height: 3px; margin-top: 3px; }
+  .raw-zone-card p { margin-top: 2px; }
+  .raw-zone-card footer { gap: 1px 4px; margin-top: 2px; padding-top: 2px; }
+}
+
+@media (max-width: 1300px) and (max-height: 820px) and (min-width: 901px) {
+  .raw-trend-chart { min-height: 132px; max-height: 190px; flex-basis: 132px; height: clamp(132px, 10.4cqw, 190px) !important; }
 }
 
 @media (max-width: 900px) {
@@ -1858,6 +1848,8 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .raw-control, .raw-mobile-menu { transition: none; }
+  .raw-kpi-card[role="link"], .raw-panel[role="link"] { transition: none; }
+  .raw-kpi-card[role="link"]:hover, .raw-kpi-card[role="link"]:focus-visible, .raw-panel[role="link"]:hover, .raw-panel[role="link"]:focus-visible, .raw-kpi-card[role="link"]:active, .raw-panel[role="link"]:active { transform: none; }
   .raw-alert-viewport { scroll-behavior: auto; }
   .raw-silo-card, .raw-silo-vessel, .raw-silo-fill, .raw-silo-fill::before, .raw-silo-fill i, .raw-silo-shine { animation: none; }
 }

@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview --host 127.0.0.1",
     "check:raw-layout": "node scripts/check-raw-board-layout.mjs",
+    "check:raw-interactions": "node scripts/check-raw-interactions.mjs",
     "check:raw-exceptions": "node scripts/check-raw-exceptions.mjs"
   },
   "dependencies": {

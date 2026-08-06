@@ -105,6 +105,22 @@ function probeLayout() {
     })
   })
 
+  const zoneCards = [...document.querySelectorAll('.raw-zone-card')]
+  zoneCards.forEach((card, index) => {
+    if (card.scrollHeight > card.clientHeight + 1 || card.scrollWidth > card.clientWidth + 1) {
+      violations.push(`zone-card-${index}-overflow:${card.scrollWidth}x${card.scrollHeight}/${card.clientWidth}x${card.clientHeight}`)
+    }
+  })
+  for (let first = 0; first < zoneCards.length; first += 1) {
+    const a = zoneCards[first].getBoundingClientRect()
+    for (let second = first + 1; second < zoneCards.length; second += 1) {
+      const b = zoneCards[second].getBoundingClientRect()
+      const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+      const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+      if (overlapX > 1 && overlapY > 1) violations.push(`zone-card-overlap:${first}-${second}:${overlapX.toFixed(1)}x${overlapY.toFixed(1)}`)
+    }
+  }
+
   for (let first = 0; first < panels.length; first += 1) {
     const a = panels[first].getBoundingClientRect()
     for (let second = first + 1; second < panels.length; second += 1) {
@@ -115,12 +131,40 @@ function probeLayout() {
     }
   }
 
+  const monthPanel = document.querySelector('.raw-month-panel')
+  const monthSections = monthPanel
+    ? [...monthPanel.children].filter((element) => {
+        const style = getComputedStyle(element)
+        return style.display !== 'none' && style.position !== 'absolute'
+      })
+    : []
+  monthSections.forEach((section) => {
+    if (section.scrollHeight > section.clientHeight + 1 || section.scrollWidth > section.clientWidth + 1) {
+      violations.push(`month-section-overflow:${section.className || section.tagName}:${section.scrollWidth}x${section.scrollHeight}/${section.clientWidth}x${section.clientHeight}`)
+    }
+  })
+  for (let first = 0; first < monthSections.length; first += 1) {
+    const a = monthSections[first].getBoundingClientRect()
+    for (let second = first + 1; second < monthSections.length; second += 1) {
+      const b = monthSections[second].getBoundingClientRect()
+      const overlapX = Math.min(a.right, b.right) - Math.max(a.left, b.left)
+      const overlapY = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+      if (overlapX > 1 && overlapY > 1) {
+        violations.push(`month-section-overlap:${monthSections[first].className}-${monthSections[second].className}:${overlapX.toFixed(1)}x${overlapY.toFixed(1)}`)
+      }
+    }
+  }
+
   return {
     verdict: violations.length ? 'FAIL' : 'PASS',
     viewport: [window.innerWidth, window.innerHeight],
     board: { width: +boardRect.width.toFixed(1), height: +boardRect.height.toFixed(1) },
     violations,
     geometry,
+    monthSections: monthSections.map((section) => {
+      const rect = section.getBoundingClientRect()
+      return { name: section.className || section.tagName, top: +rect.top.toFixed(1), bottom: +rect.bottom.toFixed(1), height: +rect.height.toFixed(1) }
+    }),
   }
 }
 
