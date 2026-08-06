@@ -307,3 +307,47 @@ if (orderRoller && orderRollerTrack) {
   };
   window.requestAnimationFrame(animateRoller);
 }
+
+// 运营指挥中心侧边栏：点击左上角箱子图标弹出
+(function buildCommandSidebar() {
+  const sidebar = document.getElementById('ccSidebar');
+  const scrim = document.getElementById('ccScrim');
+  const cube = document.querySelector('.cube-icon');
+  if (!sidebar || !cube) return;
+
+  const nav = [
+    { href: '/raw-material', label: '原料库看板', note: '生产保障与库存风险', icon: '<svg viewBox="0 0 20 20"><path d="M10 2 L17 6 L10 10 L3 6 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3 6 v7 L10 17 L17 13 V6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 10 v7" stroke="currentColor" stroke-width="1.6"/></svg>' },
+    { href: '/finished-goods', label: '成品库看板', note: '成品库运营视图', icon: '<svg viewBox="0 0 20 20"><path d="M7 3a2 2 0 0 1 2 2v4h1V5.5a1.5 1.5 0 0 1 3 0V9h1V6.5a1.5 1.5 0 0 1 3 0V9h.6a1.9 1.9 0 0 1 1.9 1.9v3.1a5.5 5.5 0 0 1-5.5 5.5H10a5.5 5.5 0 0 1-5.5-5.5v-4A1.9 1.9 0 0 1 6.4 9h.6V5A2 2 0 0 1 7 3Z" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>' },
+    { href: '/box-dashboard/', label: '箱盒库看板', note: '包装物料周转中心', icon: '<svg viewBox="0 0 20 20"><path d="M10 2 L17 6 L10 10 L3 6 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3 6 V13 L10 17 L17 13 V6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 10 V17" stroke="currentColor" stroke-width="1.6"/></svg>', current: true },
+    { href: '/operations', label: '作业运营', note: '入库 · 拣货 · 出库', icon: '<svg viewBox="0 0 20 20"><path d="M3 15h5l4-5h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="3" cy="15" r="1.6" fill="currentColor"/><circle cx="17" cy="10" r="1.6" fill="currentColor"/><path d="M14 2l3 3-3 3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+    { href: '/performance', label: '履约质量', note: '时效与准确率', icon: '<svg viewBox="0 0 20 20"><path d="M10 2l6 2v5c0 4-2.6 6.6-6 8-3.4-1.4-6-4-6-8V4Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.5 10l2 2 3-3.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+    { href: '/zones', label: '空间与库存', note: '库容与库区状态', icon: '<svg viewBox="0 0 20 20"><path d="M10 1 L17 5 L10 9 L3 5 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 8.5 L17 12.5 L10 16.5 L3 12.5 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3 5 V12.5 M17 5 V12.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>' },
+    { href: '/exceptions', label: '风险与异常', note: '预警与处置闭环', icon: '<svg viewBox="0 0 20 20"><path d="M10 2.5 L18 17 H2 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 8 v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10" cy="14.5" r=".9" fill="currentColor"/></svg>' },
+    { href: '/resources', label: '资源调度', note: '叉车与任务负荷', icon: '<svg viewBox="0 0 20 20"><path d="M1 5 h11 v8 h-11 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 8 h4 l3 3 v2 h-7 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="6" cy="15" r="1.5" fill="currentColor"/><circle cx="14" cy="15" r="1.5" fill="currentColor"/></svg>' },
+    { href: '/data-center', label: '数据中心', note: '导入与导出', icon: '<svg viewBox="0 0 20 20"><ellipse cx="10" cy="4.5" rx="7" ry="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 4.5 V10 C3 11.4 6.1 12.5 10 12.5 C13.9 12.5 17 11.4 17 10 V4.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M3 10 V15.5 C3 16.9 6.1 18 10 18 C13.9 18 17 16.9 17 15.5 V10" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>' },
+  ];
+
+  sidebar.innerHTML = `
+    <div class="cc-sidebar-head">
+      <span class="cc-brand-mark">IW</span>
+      <div class="cc-brand-copy"><strong>INTCO WAREHOUSE</strong><span>运营指挥中心</span></div>
+      <button class="cc-sidebar-close" id="ccSidebarClose" aria-label="关闭导航"><svg viewBox="0 0 20 20"><path d="M5 5l10 10M15 5L5 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
+    </div>
+    <nav class="cc-sidebar-nav">
+      <p class="cc-nav-caption">决策工作台</p>
+      ${nav.map((item) => `
+        <a class="cc-nav-item${item.current ? ' is-current' : ''}" href="${item.href}">
+          <span class="cc-nav-ico">${item.icon}</span>
+          <span><b>${item.label}</b><small>${item.note}</small></span>
+        </a>`).join('')}
+    </nav>
+    <div class="cc-sidebar-foot"><span class="cc-live-dot"></span><span>数据服务在线</span></div>`;
+
+  const open = () => { sidebar.classList.add('cc-sidebar--open'); if (scrim) scrim.classList.add('cc-scrim--show'); };
+  const close = () => { sidebar.classList.remove('cc-sidebar--open'); if (scrim) scrim.classList.remove('cc-scrim--show'); };
+  const closeBtn = document.getElementById('ccSidebarClose');
+  if (closeBtn) closeBtn.addEventListener('click', close);
+  if (scrim) scrim.addEventListener('click', close);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  cube.addEventListener('click', (e) => { e.preventDefault(); open(); });
+})();

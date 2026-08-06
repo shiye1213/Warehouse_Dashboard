@@ -6,9 +6,9 @@ import {
   AlertTriangle,
   Boxes,
   ChevronLeft,
-  CircleGauge,
   Database,
   Download,
+  Hand,
   Menu,
   PackageSearch,
   PanelLeftClose,
@@ -29,11 +29,11 @@ const collapsed = ref(localStorage.getItem('warehouse.sidebar.collapsed') === 't
 const mobileOpen = ref(false)
 const now = ref(new Date())
 const { snapshot, loading, refresh } = useDashboard()
-const scopeVisible = computed(() => !['overview', 'raw-material', 'data-center', 'zone-detail'].includes(String(route.name || '')))
+const scopeVisible = computed(() => !['finished-goods', 'raw-material', 'data-center', 'zone-detail'].includes(String(route.name || '')))
 
 const navItems = [
-  { to: '/overview', label: '经营总览', note: '客户与高管视图', icon: CircleGauge },
   { to: '/raw-material', label: '原料库看板', note: '生产保障与库存风险', icon: PackageSearch },
+  { to: '/finished-goods', label: '成品库看板', note: '成品库运营视图', icon: Hand },
   { to: '/box-dashboard', label: '箱盒库看板', note: '包装物料周转中心', icon: Boxes },
   { to: '/operations', label: '作业运营', note: '入库 · 拣货 · 出库', icon: Route },
   { to: '/performance', label: '履约质量', note: '时效与准确率', icon: ShieldCheck },
@@ -57,7 +57,7 @@ function navigate(path) {
     window.location.href = '/box-dashboard/'
     return
   }
-  const query = path !== '/overview' && route.query.warehouse
+  const query = path !== '/finished-goods' && route.query.warehouse
     ? { warehouse: route.query.warehouse } : {}
   router.push({ path, query })
   mobileOpen.value = false
@@ -79,7 +79,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'is-collapsed': collapsed, 'is-mobile-open': mobileOpen, 'is-board-route': ['overview', 'raw-material'].includes(route.name) }">
+  <div class="app-shell" :class="{ 'is-collapsed': collapsed, 'is-mobile-open': mobileOpen, 'is-board-route': ['finished-goods', 'raw-material'].includes(route.name) }">
     <button v-if="mobileOpen" class="mobile-scrim" aria-label="关闭导航" @click="mobileOpen = false" />
 
     <aside class="sidebar" aria-label="主导航">
