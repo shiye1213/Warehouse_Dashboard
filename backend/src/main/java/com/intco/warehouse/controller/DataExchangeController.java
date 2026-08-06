@@ -2,7 +2,7 @@ package com.intco.warehouse.controller;
 
 import com.intco.warehouse.service.ImportExportService;
 import com.intco.warehouse.service.ImportExportService.ExportFile;
-import com.intco.warehouse.service.WarehouseDataService.ImportResult;
+import com.intco.warehouse.service.WarehouseImportService.ImportSummary;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import org.springframework.core.io.ByteArrayResource;
@@ -27,8 +27,8 @@ public class DataExchangeController {
     }
 
     @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ImportResult importFile(@RequestParam("file") MultipartFile file) throws IOException {
-        return exchangeService.importDailyMetrics(file);
+    public ImportSummary importFile(@RequestParam("file") MultipartFile file) throws IOException {
+        return exchangeService.importFile(file);
     }
 
     @GetMapping("/export")
@@ -39,6 +39,11 @@ public class DataExchangeController {
     @GetMapping("/template")
     public ResponseEntity<ByteArrayResource> template() throws IOException {
         return fileResponse(exchangeService.template());
+    }
+
+    @GetMapping("/status")
+    public java.util.Map<String, Object> status() {
+        return exchangeService.status();
     }
 
     private ResponseEntity<ByteArrayResource> fileResponse(ExportFile file) {

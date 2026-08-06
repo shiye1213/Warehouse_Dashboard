@@ -2,6 +2,8 @@ package com.intco.warehouse;
 
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -9,16 +11,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.io.ByteArrayInputStream;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@ActiveProfiles("test")
 class DashboardApiTest {
     @Autowired
     private MockMvc mvc;
@@ -36,11 +43,47 @@ class DashboardApiTest {
     }
 
     @Test
+    void warehouseDashboardSupportsAllThreeBoards() throws Exception {
+        mvc.perform(get("/api/dashboard/warehouses/WH-RM01").param("range", "31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.trend", hasSize(31)))
+                .andExpect(jsonPath("$.zones", hasSize(8)));
+        mvc.perform(get("/api/dashboard/warehouses/WH-FG03").param("range", "31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.daily", hasSize(31)))
+                .andExpect(jsonPath("$.zones", hasSize(2)));
+        mvc.perform(get("/api/dashboard/warehouses/WH-PK04").param("range", "31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.daily", hasSize(31)))
+                .andExpect(jsonPath("$.zones", hasSize(2)));
+    }
+
+    @Test
     void exportProvidesRealWorkbook() throws Exception {
-        mvc.perform(get("/api/data/export").param("format", "xlsx"))
+        byte[] content = mvc.perform(get("/api/data/export").param("format", "xlsx"))
                 .andExpect(status().isOk())
                 .andExpect(header().string("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
-                .andExpect(content().contentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
+                .andExpect(content().contentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .andReturn().getResponse().getContentAsByteArray();
+        try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(content))) {
+            assertEquals(8, workbook.getNumberOfSheets());
+            assertNotNull(workbook.getSheet("运营_SKU日指标"));
+            assertEquals(1970, workbook.getSheet("运营_SKU日指标").getLastRowNum());
+        }
+    }
+
+    @Test
+    @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+    void exportedWorkbookCanBeImportedAgain() throws Exception {
+        byte[] exported = mvc.perform(get("/api/data/export").param("format", "xlsx"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        MockMultipartFile file = new MockMultipartFile("file", "roundtrip.xlsx",
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", exported);
+        mvc.perform(multipart("/api/data/import").file(file))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.importType").value("FULL_WORKBOOK"))
+                .andExpect(jsonPath("$.importedRows").value(2749))
+                .andExpect(jsonPath("$.endDate").value("2026-07-31"));
     }
 
     @Test

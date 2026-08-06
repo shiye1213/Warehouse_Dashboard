@@ -1,5 +1,6 @@
 import { computed, onMounted, ref } from 'vue'
 import { dashboardApi } from '../services/api'
+import { registerProjectRefresh } from './useProjectRefresh'
 
 const snapshot = ref(null)
 const loading = ref(false)
@@ -8,7 +9,7 @@ let pendingRequest
 
 async function load(force = false) {
   if (snapshot.value && !force) return snapshot.value
-  if (pendingRequest && !force) return pendingRequest
+  if (pendingRequest) return pendingRequest
   loading.value = true
   error.value = ''
   pendingRequest = dashboardApi.getSnapshot(31)
@@ -26,6 +27,8 @@ async function load(force = false) {
     })
   return pendingRequest
 }
+
+registerProjectRefresh('warehouse-dashboard', () => load(true))
 
 export function useDashboard() {
   onMounted(() => load().catch(() => {}))

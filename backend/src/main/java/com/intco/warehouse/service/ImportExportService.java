@@ -1,36 +1,23 @@
 package com.intco.warehouse.service;
 
-import com.intco.warehouse.model.DashboardData;
-import com.intco.warehouse.model.DashboardData.Alert;
-import com.intco.warehouse.model.DashboardData.DailyMetric;
-import com.intco.warehouse.model.DashboardData.Forklift;
-import com.intco.warehouse.model.DashboardData.Target;
-import com.intco.warehouse.model.DashboardData.Zone;
-import com.intco.warehouse.service.WarehouseDataService.ImportResult;
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
+import com.intco.warehouse.service.WarehouseImportService.ImportSummary;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.sql.Date;
+import java.sql.Timestamp;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.function.Function;
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVParser;
-import org.apache.commons.csv.CSVRecord;
+import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
-import org.apache.poi.ss.usermodel.DataFormatter;
-import org.apache.poi.ss.usermodel.DateUtil;
 import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.Font;
 import org.apache.poi.ss.usermodel.HorizontalAlignment;
@@ -38,329 +25,282 @@ import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class ImportExportService {
-    private static final String[] DAILY_HEADERS = {"日期", "入库箱数", "出库箱数", "拣货任务", "叉车任务", "库存准确率", "入库及时率", "出库及时率", "异常数", "收货时长(分钟)", "拣货时长(分钟)", "平均作业时长(分钟)", "月台利用率", "加班工时"};
-    private static final Map<String, String> HEADER_ALIASES = buildHeaderAliases();
+    private static final String XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    private final WarehouseImportService importService;
     private final WarehouseDataService dataService;
+    private final JdbcTemplate jdbc;
 
-    public ImportExportService(WarehouseDataService dataService) {
+    public ImportExportService(WarehouseImportService importService, WarehouseDataService dataService, JdbcTemplate jdbc) {
+        this.importService = importService;
         this.dataService = dataService;
+        this.jdbc = jdbc;
     }
 
-    public ImportResult importDailyMetrics(MultipartFile file) throws IOException {
-        if (file == null || file.isEmpty()) {
-            throw new IllegalArgumentException("请选择要导入的文件");
-        }
-        String filename = file.getOriginalFilename() == null ? "" : file.getOriginalFilename().toLowerCase(Locale.ROOT);
-        List<DailyMetric> rows;
-        if (filename.endsWith(".xlsx")) {
-            rows = readWorkbook(file);
-        } else if (filename.endsWith(".csv")) {
-            rows = readCsv(file);
-        } else {
-            throw new IllegalArgumentException("仅支持 .xlsx 或 .csv 文件");
-        }
-        return dataService.mergeDailyMetrics(rows);
+    public ImportSummary importFile(MultipartFile file) throws IOException {
+        if (file == null || file.isEmpty()) throw new IllegalArgumentException("请选择要导入的文件");
+        String originalName = file.getOriginalFilename() == null ? "upload" : file.getOriginalFilename();
+        String filename = originalName.toLowerCase(Locale.ROOT);
+        if (filename.endsWith(".xlsx")) return importService.importWorkbook(file.getInputStream(), originalName);
+        if (filename.endsWith(".csv")) return importService.importWarehouseDailyCsv(file.getInputStream(), originalName);
+        throw new IllegalArgumentException("仅支持 .xlsx 或 UTF-8 .csv 文件");
     }
 
     public ExportFile export(String format) throws IOException {
         if ("csv".equalsIgnoreCase(format)) {
-            return new ExportFile("warehouse-daily-metrics.csv", "text/csv;charset=UTF-8", exportCsv());
+            return new ExportFile("warehouse-daily-metrics.csv", "text/csv;charset=UTF-8", exportDailyCsv());
         }
-        if (!"xlsx".equalsIgnoreCase(format)) {
-            throw new IllegalArgumentException("导出格式仅支持 xlsx 或 csv");
-        }
-        return new ExportFile("warehouse-operation-report.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", exportWorkbook());
+        if (!"xlsx".equalsIgnoreCase(format)) throw new IllegalArgumentException("导出格式仅支持 xlsx 或 csv");
+        return new ExportFile("warehouse-operation-dataset.xlsx", XLSX_CONTENT_TYPE, exportWorkbook(false));
     }
 
     public ExportFile template() throws IOException {
+        return new ExportFile("warehouse-import-template.xlsx", XLSX_CONTENT_TYPE, exportWorkbook(true));
+    }
+
+    public Map<String, Object> status() {
+        return dataService.dataStatus();
+    }
+
+    private byte[] exportWorkbook(boolean template) throws IOException {
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            Sheet sheet = workbook.createSheet("日指标");
-            CellStyle header = headerStyle(workbook);
-            writeHeader(sheet, DAILY_HEADERS, header);
-            Object[] example = {"2026-08-01", 520, 488, 126, 245, .986, .958, .947, 4, 41, 38, 38, .72, 1.5};
-            writeRow(sheet.createRow(1), example);
-            Row note = sheet.createRow(3);
-            note.createCell(0).setCellValue("说明：日期为必填项；百分比可填写 0.986 或 98.6%；同日期数据会更新，新增日期会追加。");
-            sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(3, 3, 0, DAILY_HEADERS.length - 1));
-            sizeColumns(sheet, DAILY_HEADERS.length);
-            workbook.write(output);
-            return new ExportFile("warehouse-import-template.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", output.toByteArray());
-        }
-    }
-
-    private List<DailyMetric> readWorkbook(MultipartFile file) throws IOException {
-        List<DailyMetric> rows = new ArrayList<>();
-        try (Workbook workbook = WorkbookFactory.create(file.getInputStream())) {
-            Sheet sheet = workbook.getSheet("日指标");
-            if (sheet == null) sheet = workbook.getSheetAt(0);
-            if (sheet.getPhysicalNumberOfRows() < 2) throw new IllegalArgumentException("Excel 中没有可导入的数据行");
-            Map<Integer, String> columns = new HashMap<>();
-            Row header = sheet.getRow(sheet.getFirstRowNum());
-            for (Cell cell : header) {
-                String canonical = canonicalHeader(cell.getStringCellValue());
-                if (canonical != null) columns.put(cell.getColumnIndex(), canonical);
+            if (template) writeInstructions(workbook);
+            for (Dataset dataset : datasets()) {
+                List<Map<String, Object>> rows = template ? new ArrayList<>() : jdbc.queryForList(dataset.query);
+                writeDataset(workbook, dataset, rows);
             }
-            requireDateHeader(columns.values());
-            DataFormatter formatter = new DataFormatter(Locale.CHINA);
-            for (int rowIndex = header.getRowNum() + 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
-                Row row = sheet.getRow(rowIndex);
-                if (row == null || rowIsBlank(row, formatter)) continue;
-                Map<String, String> values = new HashMap<>();
-                for (Map.Entry<Integer, String> entry : columns.entrySet()) {
-                    Cell cell = row.getCell(entry.getKey());
-                    values.put(entry.getValue(), cellValue(cell, formatter));
-                }
-                rows.add(toDailyMetric(values, rowIndex + 1));
-                if (rows.size() > 10000) throw new IllegalArgumentException("单次导入最多支持 10,000 行");
-            }
-        }
-        return rows;
-    }
-
-    private List<DailyMetric> readCsv(MultipartFile file) throws IOException {
-        List<DailyMetric> rows = new ArrayList<>();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8));
-             CSVParser parser = CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).setIgnoreEmptyLines(true).setTrim(true).build().parse(reader)) {
-            Map<String, String> sourceToCanonical = new LinkedHashMap<>();
-            for (String source : parser.getHeaderMap().keySet()) {
-                String canonical = canonicalHeader(source);
-                if (canonical != null) sourceToCanonical.put(source, canonical);
-            }
-            requireDateHeader(sourceToCanonical.values());
-            for (CSVRecord record : parser) {
-                Map<String, String> values = new HashMap<>();
-                sourceToCanonical.forEach((source, canonical) -> values.put(canonical, record.get(source)));
-                rows.add(toDailyMetric(values, (int) record.getRecordNumber() + 1));
-                if (rows.size() > 10000) throw new IllegalArgumentException("单次导入最多支持 10,000 行");
-            }
-        }
-        return rows;
-    }
-
-    private DailyMetric toDailyMetric(Map<String, String> values, int rowNumber) {
-        try {
-            DailyMetric row = new DailyMetric();
-            row.setDate(parseDate(values.get("date")));
-            row.setInbound(integer(values.get("inbound"), "入库箱数"));
-            row.setOutbound(integer(values.get("outbound"), "出库箱数"));
-            row.setPicking(integer(values.get("picking"), "拣货任务"));
-            row.setForkliftTasks(integer(values.get("forkliftTasks"), "叉车任务"));
-            row.setInventoryAccuracy(rate(values.get("inventoryAccuracy"), "库存准确率"));
-            row.setReceivingTimely(rate(values.get("receivingTimely"), "入库及时率"));
-            row.setDeliveryTimely(rate(values.get("deliveryTimely"), "出库及时率"));
-            row.setExceptions(integer(values.get("exceptions"), "异常数"));
-            row.setReceiptMinutes(number(values.get("receiptMinutes"), "收货时长"));
-            row.setPickingMinutes(number(values.get("pickingMinutes"), "拣货时长"));
-            row.setAverageDuration(number(values.get("averageDuration"), "平均作业时长"));
-            row.setDockUtilization(rate(values.get("dockUtilization"), "月台利用率"));
-            row.setOvertimeHours(number(values.get("overtimeHours"), "加班工时"));
-            return row;
-        } catch (IllegalArgumentException error) {
-            throw new IllegalArgumentException("第 " + rowNumber + " 行：" + error.getMessage());
-        }
-    }
-
-    private byte[] exportCsv() throws IOException {
-        DashboardData data = dataService.currentData();
-        StringBuilder csv = new StringBuilder("\uFEFF");
-        csv.append(String.join(",", DAILY_HEADERS)).append("\r\n");
-        for (DailyMetric row : data.getDaily()) {
-            csv.append(row.getDate()).append(',').append(row.getInbound()).append(',').append(row.getOutbound()).append(',')
-                    .append(row.getPicking()).append(',').append(row.getForkliftTasks()).append(',')
-                    .append(row.getInventoryAccuracy()).append(',').append(row.getReceivingTimely()).append(',')
-                    .append(row.getDeliveryTimely()).append(',').append(row.getExceptions()).append(',')
-                    .append(row.getReceiptMinutes()).append(',').append(row.getPickingMinutes()).append(',')
-                    .append(row.getAverageDuration()).append(',').append(row.getDockUtilization()).append(',')
-                    .append(row.getOvertimeHours()).append("\r\n");
-        }
-        return csv.toString().getBytes(StandardCharsets.UTF_8);
-    }
-
-    private byte[] exportWorkbook() throws IOException {
-        DashboardData data = dataService.currentData();
-        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
-            CellStyle header = headerStyle(workbook);
-            CellStyle percent = workbook.createCellStyle();
-            percent.setDataFormat(workbook.createDataFormat().getFormat("0.0%"));
-
-            Sheet daily = workbook.createSheet("日指标");
-            writeHeader(daily, DAILY_HEADERS, header);
-            int rowIndex = 1;
-            for (DailyMetric item : data.getDaily()) {
-                Row row = daily.createRow(rowIndex++);
-                writeRow(row, new Object[]{item.getDate(), item.getInbound(), item.getOutbound(), item.getPicking(), item.getForkliftTasks(), item.getInventoryAccuracy(), item.getReceivingTimely(), item.getDeliveryTimely(), item.getExceptions(), item.getReceiptMinutes(), item.getPickingMinutes(), item.getAverageDuration(), item.getDockUtilization(), item.getOvertimeHours()});
-                for (int column : Arrays.asList(5, 6, 7, 12)) row.getCell(column).setCellStyle(percent);
-            }
-            sizeColumns(daily, DAILY_HEADERS.length);
-
-            Sheet zones = workbook.createSheet("库区状态");
-            String[] zoneHeaders = {"快照日期", "仓库", "库区编码", "库区名称", "总库位", "已用库位", "可用库位", "占用率", "物料种类", "异常库位", "冻结库位", "负责人", "状态"};
-            writeHeader(zones, zoneHeaders, header); rowIndex = 1;
-            for (Zone item : data.getZones()) {
-                Row row = zones.createRow(rowIndex++);
-                writeRow(row, new Object[]{item.getSnapshotDate(), item.getWarehouse(), item.getCode(), item.getName(), item.getCapacity(), item.getOccupied(), item.getAvailable(), item.getOccupancy(), item.getMaterialTypes(), item.getAbnormal(), item.getFrozen(), item.getManager(), item.getStatus()});
-                row.getCell(7).setCellStyle(percent);
-            }
-            sizeColumns(zones, zoneHeaders.length);
-
-            Sheet alerts = workbook.createSheet("异常事件");
-            String[] alertHeaders = {"事件编号", "日期", "时间", "类型", "标题", "仓库", "库区", "等级", "状态", "责任人", "响应分钟", "SLA小时", "持续小时", "是否超时", "原因", "建议", "物料", "项目"};
-            writeHeader(alerts, alertHeaders, header); rowIndex = 1;
-            for (Alert item : data.getAlerts()) writeRow(alerts.createRow(rowIndex++), new Object[]{item.getId(), item.getDate(), item.getTime(), item.getType(), item.getTitle(), item.getWarehouse(), item.getZone(), item.getSeverity(), item.getStatus(), item.getOwner(), item.getResponseMinutes(), item.getSlaHours(), item.getDurationHours(), item.isSlaBreached() ? "是" : "否", item.getDescription(), item.getRecommendation(), item.getMaterial(), item.getProject()});
-            sizeColumns(alerts, alertHeaders.length);
-
-            Sheet targets = workbook.createSheet("目标阈值");
-            String[] targetHeaders = {"指标编码", "指标名称", "目标", "单位", "预警规则", "指标定义", "数据来源"};
-            writeHeader(targets, targetHeaders, header); rowIndex = 1;
-            for (Target item : data.getTargets()) writeRow(targets.createRow(rowIndex++), new Object[]{item.getKey(), item.getName(), item.getTarget(), item.getUnit(), item.getRule(), item.getDefinition(), item.getSource()});
-            sizeColumns(targets, targetHeaders.length);
-
-            Sheet resources = workbook.createSheet("叉车资源");
-            String[] resourceHeaders = {"任务池", "仓库", "状态", "任务说明", "当前任务", "峰值任务", "负荷"};
-            writeHeader(resources, resourceHeaders, header); rowIndex = 1;
-            for (Forklift item : data.getForklifts()) {
-                Row row = resources.createRow(rowIndex++);
-                writeRow(row, new Object[]{item.getId(), item.getZone(), item.getStatus(), item.getTask(), item.getTasks(), item.getPeakTasks(), item.getLoad()});
-                row.getCell(6).setCellStyle(percent);
-            }
-            sizeColumns(resources, resourceHeaders.length);
-
+            workbook.setActiveSheet(0);
             workbook.write(output);
             return output.toByteArray();
         }
     }
 
-    private static void writeHeader(Sheet sheet, String[] headers, CellStyle style) {
-        Row row = sheet.createRow(0);
-        for (int index = 0; index < headers.length; index++) {
-            Cell cell = row.createCell(index);
-            cell.setCellValue(headers[index]);
-            cell.setCellStyle(style);
+    private byte[] exportDailyCsv() {
+        Dataset dataset = warehouseDailyDataset();
+        StringBuilder csv = new StringBuilder("\uFEFF");
+        for (int i = 0; i < dataset.columns.length; i++) {
+            if (i > 0) csv.append(',');
+            csv.append(dataset.columns[i].technical);
         }
-        sheet.createFreezePane(0, 1);
-        sheet.setAutoFilter(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, headers.length - 1));
+        csv.append("\r\n");
+        for (Map<String, Object> row : jdbc.queryForList(dataset.query)) {
+            for (int i = 0; i < dataset.columns.length; i++) {
+                if (i > 0) csv.append(',');
+                Object value = get(row, dataset.columns[i].technical);
+                csv.append(csvEscape(value));
+            }
+            csv.append("\r\n");
+        }
+        return csv.toString().getBytes(StandardCharsets.UTF_8);
     }
 
-    private static void writeRow(Row row, Object[] values) {
-        for (int index = 0; index < values.length; index++) {
-            Cell cell = row.createCell(index);
-            Object value = values[index];
-            if (value instanceof Number) cell.setCellValue(((Number) value).doubleValue());
-            else if (value instanceof Boolean) cell.setCellValue((Boolean) value);
-            else cell.setCellValue(value == null ? "" : String.valueOf(value));
+    private void writeInstructions(Workbook workbook) {
+        Sheet sheet = workbook.createSheet("导入说明");
+        sheet.createRow(0).createCell(0).setCellValue("仓库运营数据导入模板");
+        sheet.createRow(2).createCell(0).setCellValue("1. 完整 Excel 导入必须保留全部 8 个数据工作表及第 3 行技术字段名。数据会在单个事务中校验并替换。 ");
+        sheet.createRow(3).createCell(0).setCellValue("2. 日期使用 yyyy-MM-dd，时间使用 yyyy-MM-dd HH:mm:ss，百分比可填写 0.98 或 98%。");
+        sheet.createRow(4).createCell(0).setCellValue("3. CSV 仅用于仓库日指标，字段名使用运营_仓库每日指标中的技术字段名。");
+        sheet.setColumnWidth(0, 110 * 256);
+    }
+
+    private void writeDataset(Workbook workbook, Dataset dataset, List<Map<String, Object>> rows) {
+        Sheet sheet = workbook.createSheet(dataset.sheetName);
+        CellStyle titleStyle = titleStyle(workbook);
+        CellStyle noteStyle = noteStyle(workbook);
+        CellStyle headerStyle = headerStyle(workbook);
+        CellStyle dateStyle = dateStyle(workbook, "yyyy-mm-dd");
+        CellStyle dateTimeStyle = dateStyle(workbook, "yyyy-mm-dd hh:mm:ss");
+        CellStyle percentStyle = numberStyle(workbook, "0.0%");
+        CellStyle decimalStyle = numberStyle(workbook, "#,##0.0000");
+        CellStyle integerStyle = numberStyle(workbook, "#,##0");
+        CellStyle textStyle = numberStyle(workbook, "@");
+
+        Row title = sheet.createRow(0);
+        title.createCell(0).setCellValue(dataset.title);
+        title.getCell(0).setCellStyle(titleStyle);
+        sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, dataset.columns.length - 1));
+        Row note = sheet.createRow(1);
+        note.createCell(0).setCellValue(dataset.description);
+        note.getCell(0).setCellStyle(noteStyle);
+        sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(1, 1, 0, dataset.columns.length - 1));
+
+        Row header = sheet.createRow(2);
+        for (int columnIndex = 0; columnIndex < dataset.columns.length; columnIndex++) {
+            Column column = dataset.columns[columnIndex];
+            Cell cell = header.createCell(columnIndex);
+            cell.setCellValue(column.technical + "\n" + column.chinese);
+            cell.setCellStyle(headerStyle);
+            sheet.setColumnWidth(columnIndex, Math.min(32, Math.max(12, Math.max(column.technical.length(), column.chinese.length()) + 2)) * 256);
         }
+        header.setHeightInPoints(34);
+
+        int rowIndex = 3;
+        for (Map<String, Object> values : rows) {
+            Row row = sheet.createRow(rowIndex++);
+            for (int columnIndex = 0; columnIndex < dataset.columns.length; columnIndex++) {
+                Column column = dataset.columns[columnIndex];
+                Object value = get(values, column.technical);
+                Cell cell = row.createCell(columnIndex);
+                writeValue(cell, value);
+                if (value instanceof String) cell.setCellStyle(textStyle);
+                else if (value instanceof Date || value instanceof LocalDate) cell.setCellStyle(dateStyle);
+                else if (value instanceof Timestamp || value instanceof LocalDateTime) cell.setCellStyle(dateTimeStyle);
+                else if (column.percent) cell.setCellStyle(percentStyle);
+                else if (value instanceof BigDecimal || value instanceof Double || value instanceof Float) cell.setCellStyle(decimalStyle);
+                else if (value instanceof Number) cell.setCellStyle(integerStyle);
+            }
+        }
+        sheet.createFreezePane(0, 3);
+        sheet.setAutoFilter(new org.apache.poi.ss.util.CellRangeAddress(2, Math.max(2, rowIndex - 1), 0, dataset.columns.length - 1));
+    }
+
+    private static void writeValue(Cell cell, Object value) {
+        if (value == null) return;
+        if (value instanceof Number) cell.setCellValue(((Number) value).doubleValue());
+        else if (value instanceof Boolean) cell.setCellValue((Boolean) value ? "是" : "否");
+        else if (value instanceof Date) cell.setCellValue((Date) value);
+        else if (value instanceof Timestamp) cell.setCellValue((Timestamp) value);
+        else if (value instanceof LocalDate) cell.setCellValue(Date.valueOf((LocalDate) value));
+        else if (value instanceof LocalDateTime) cell.setCellValue(Timestamp.valueOf((LocalDateTime) value));
+        else cell.setCellValue(String.valueOf(value));
+    }
+
+    private static Object get(Map<String, Object> row, String key) {
+        if (row.containsKey(key)) return row.get(key);
+        for (Map.Entry<String, Object> entry : row.entrySet()) if (entry.getKey().equalsIgnoreCase(key)) return entry.getValue();
+        return null;
+    }
+
+    private static String csvEscape(Object value) {
+        if (value == null) return "";
+        String text = String.valueOf(value);
+        if (text.contains(",") || text.contains("\"") || text.contains("\n") || text.contains("\r")) return "\"" + text.replace("\"", "\"\"") + "\"";
+        return text;
+    }
+
+    private static CellStyle titleStyle(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+        style.setFillForegroundColor(IndexedColors.DARK_BLUE.getIndex());
+        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        Font font = workbook.createFont(); font.setBold(true); font.setColor(IndexedColors.WHITE.getIndex()); font.setFontHeightInPoints((short) 14);
+        style.setFont(font); style.setVerticalAlignment(org.apache.poi.ss.usermodel.VerticalAlignment.CENTER);
+        return style;
+    }
+
+    private static CellStyle noteStyle(Workbook workbook) {
+        CellStyle style = workbook.createCellStyle();
+        style.setFillForegroundColor(IndexedColors.PALE_BLUE.getIndex()); style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        Font font = workbook.createFont(); font.setItalic(true); font.setColor(IndexedColors.GREY_50_PERCENT.getIndex()); style.setFont(font);
+        return style;
     }
 
     private static CellStyle headerStyle(Workbook workbook) {
         CellStyle style = workbook.createCellStyle();
-        style.setFillForegroundColor(IndexedColors.DARK_TEAL.getIndex());
-        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
-        style.setAlignment(HorizontalAlignment.CENTER);
-        Font font = workbook.createFont();
-        font.setBold(true);
-        font.setColor(IndexedColors.WHITE.getIndex());
-        style.setFont(font);
+        style.setFillForegroundColor(IndexedColors.LIGHT_CORNFLOWER_BLUE.getIndex()); style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        style.setAlignment(HorizontalAlignment.LEFT); style.setVerticalAlignment(org.apache.poi.ss.usermodel.VerticalAlignment.CENTER); style.setWrapText(true);
+        style.setBorderBottom(BorderStyle.THIN); style.setBorderTop(BorderStyle.THIN);
+        Font font = workbook.createFont(); font.setBold(true); style.setFont(font);
         return style;
     }
 
-    private static void sizeColumns(Sheet sheet, int count) {
-        for (int column = 0; column < count; column++) {
-            sheet.autoSizeColumn(column);
-            sheet.setColumnWidth(column, Math.min(60 * 256, Math.max(12 * 256, sheet.getColumnWidth(column) + 768)));
+    private static CellStyle dateStyle(Workbook workbook, String format) {
+        CellStyle style = workbook.createCellStyle(); style.setDataFormat(workbook.createDataFormat().getFormat(format)); return style;
+    }
+
+    private static CellStyle numberStyle(Workbook workbook, String format) {
+        CellStyle style = workbook.createCellStyle(); style.setDataFormat(workbook.createDataFormat().getFormat(format)); return style;
+    }
+
+    private List<Dataset> datasets() {
+        return Arrays.asList(warehouseDataset(), inventoryDataset(), skuDailyDataset(), warehouseDailyDataset(), areaDataset(), exceptionDataset(), bomDataset(), targetDataset());
+    }
+
+    private Dataset warehouseDataset() {
+        return new Dataset("仓库主数据", "仓库主数据", "三个运营看板共用的仓库筛选与容量主数据。",
+                "SELECT warehouse_id,warehouse_name,warehouse_type,area_count,capacity_locations,warehouse_owner FROM warehouse ORDER BY warehouse_id",
+                c("warehouse_id", "仓库编码"), c("warehouse_name", "仓库名称"), c("warehouse_type", "仓库类型"), c("area_count", "库区数量"), c("capacity_locations", "容量库位数"), c("warehouse_owner", "仓库负责人"));
+    }
+
+    private Dataset inventoryDataset() {
+        return new Dataset("现存量快照", "现存量快照", "按仓库、项目、物料和库存日期保存的数量快照。",
+                "SELECT warehouse_name,material_code,material_name,project_no,customer_item,project_material_sku,product_index_no,glove_size,color_code,main_uom,specification,model,on_hand_main_qty,reserved_main_qty,frozen_main_qty,vendor_owned_on_hand_main_qty,stock_date FROM inventory_snapshot ORDER BY warehouse_id,project_no,material_code",
+                c("warehouse_name","仓库名称"),c("material_code","物料编码"),c("material_name","物料名称"),c("project_no","项目号"),c("customer_item","客户 ITEM"),c("project_material_sku","项目物料 SKU"),c("product_index_no","产品索引号"),c("glove_size","手套型号"),c("color_code","颜色代码"),c("main_uom","主计量单位"),c("specification","规格"),c("model","型号"),c("on_hand_main_qty","结存主数量"),c("reserved_main_qty","预留主数量"),c("frozen_main_qty","冻结主数量"),c("vendor_owned_on_hand_main_qty","供应商物权结存主数量"),c("stock_date","库存日期"));
+    }
+
+    private Dataset skuDailyDataset() {
+        String[] names = {"biz_date|业务日期","warehouse_id|仓库编码","warehouse_name|仓库名称","warehouse_type|仓库类型","warehouse_role|仓库业务角色","project_no|项目号","project_name|项目名称","material_code|物料编码","material_name|物料名称","project_material_sku|项目物料 SKU","warehouse_sku_key|仓库项目物料键","material_category|物料分类","color|颜色","model|型号","uom|计量单位","packaging_level|包材层级","area_id|库区编码","area_name|库区名称","inbound_order_count|入库单数","inbound_line_count|入库行项目数","inbound_qty|入库数量","outbound_order_count|出库单数","outbound_line_count|出库行项目数","outbound_qty|出库数量","picking_task_count|拣货任务数","forklift_task_count|叉车任务数","inventory_accuracy|库存准确率%","receipt_timely_rate|入库及时率%","delivery_timely_rate|出库及时率%","avg_receipt_minutes|平均收货时长","avg_picking_minutes|平均拣货时长","exception_count|异常数","avg_outbound_lead_days|成品平均周转天数"};
+        return new Dataset("运营_SKU日指标", "运营_SKU日指标", "原子事实表，粒度为业务日期 + 仓库 + 项目 + 物料。",
+                "SELECT * FROM sku_daily_metric ORDER BY biz_date,warehouse_id,project_no,material_code", columns(names));
+    }
+
+    private Dataset warehouseDailyDataset() {
+        String[] names = {"biz_date|业务日期","warehouse_id|仓库编码","warehouse_name|仓库名称","warehouse_type|仓库类型","inbound_order_count|入库单数","outbound_order_count|出库单数","raw_inbound_ton|原材料入库量（吨）","raw_outbound_ton|原材料领用量（吨）","finished_inbound_carton|成品入库量（箱）","finished_outbound_carton|成品出库量（箱）","packaging_inbound_piece|包材入库量（个）","packaging_outbound_piece|包材领用量（个）","picking_task_count|拣货任务数","forklift_task_count|叉车任务数","inventory_accuracy|库存准确率%","receipt_timely_rate|入库及时率%","delivery_timely_rate|出库及时率%","exception_count|异常数","avg_receipt_minutes|平均收货时长","avg_picking_minutes|平均拣货时长","dock_utilization_rate|月台利用率%","overtime_hours|加班工时"};
+        return new Dataset("运营_仓库每日指标", "运营_仓库每日指标", "三个仓库按日汇总的作业、时效、异常和资源指标。",
+                "SELECT * FROM warehouse_daily_metric ORDER BY biz_date,warehouse_id", columns(names));
+    }
+
+    private Dataset areaDataset() {
+        String[] names = {"snapshot_date|快照日期","warehouse_id|仓库编码","warehouse_name|仓库名称","warehouse_type|仓库类型","area_id|库区编码","area_name|库区名称","capacity_locations|容量库位数","occupied_locations|已占库位数","available_locations|可用库位数","occupancy_rate|库区占用率%","material_type_count|物料种类数","abnormal_location_count|异常库位数","frozen_qty|冻结数量","area_owner|库区负责人","status|库区状态"};
+        return new Dataset("运营_库区状态", "运营_库区状态", "库区每日状态快照。", "SELECT * FROM warehouse_area_snapshot ORDER BY snapshot_date,warehouse_id,area_id", columns(names));
+    }
+
+    private Dataset exceptionDataset() {
+        String[] names = {"event_id|异常编号","event_time|发生时间","event_type|异常类型","warehouse_id|仓库编码","warehouse_name|仓库名称","warehouse_type|仓库类型","project_no|项目号","project_name|项目名称","material_code|物料编码","material_name|物料名称","project_material_sku|项目物料 SKU","material_category|物料分类","color|颜色","model|型号","uom|计量单位","packaging_level|包材层级","area_id|库区编码","area_name|库区名称","severity|严重等级","handling_status|处理状态","owner|责任人","response_minutes|响应时长","sla_hours|SLA 时限","deadline_time|SLA 截止时间","close_time|关闭时间","duration_minutes|关闭耗时","is_sla_breached|是否超 SLA","root_cause|根因","action_taken|处理措施","remark|备注"};
+        return new Dataset("运营_异常事件", "运营_异常事件", "异常事件全生命周期明细。", "SELECT * FROM exception_event ORDER BY event_time,event_id", columns(names));
+    }
+
+    private Dataset bomDataset() {
+        String[] names = {"project_no|项目号","project_name|项目名称","finished_material_code|成品物料编码","finished_material_name|成品物料名称","finished_color|成品颜色","finished_model|成品型号","finished_uom|成品计量单位","component_category|关联物料分类","component_material_code|关联物料编码","component_material_name|关联物料名称","component_color|关联物料颜色","component_model|关联物料型号","component_uom|关联物料计量单位","component_qty_per_finished_carton|每箱成品耗用量","component_qty_uom|耗用量单位","bom_relationship|BOM 关系说明"};
+        return new Dataset("项目_BOM关系", "项目_BOM关系", "项目成品 SKU 与原材料、外箱、内盒的用量关系。", "SELECT * FROM bom_relation ORDER BY project_no,finished_material_code,component_material_code", columns(names));
+    }
+
+    private Dataset targetDataset() {
+        return new Dataset("运营_KPI目标", "运营_KPI目标", "KPI 目标、预警方向、计算口径与来源。", "SELECT * FROM kpi_target ORDER BY kpi_name",
+                c("kpi_name","KPI 名称"),c("target_value","目标值"),c("unit","单位"),c("warning_rule","预警规则"),c("calculation_definition","计算口径"),c("data_source","数据来源"));
+    }
+
+    private static Column[] columns(String[] definitions) {
+        Column[] columns = new Column[definitions.length];
+        for (int i = 0; i < definitions.length; i++) {
+            String[] parts = definitions[i].split("\\|", 2);
+            columns[i] = c(parts[0], parts[1]);
         }
+        return columns;
     }
 
-    private static String cellValue(Cell cell, DataFormatter formatter) {
-        if (cell == null) return "";
-        if (DateUtil.isCellDateFormatted(cell)) {
-            return cell.getLocalDateTimeCellValue().toLocalDate().toString();
+    private static Column c(String technical, String chinese) { return new Column(technical, chinese, chinese.endsWith("%")); }
+
+    private static final class Column {
+        private final String technical;
+        private final String chinese;
+        private final boolean percent;
+        private Column(String technical, String chinese, boolean percent) { this.technical = technical; this.chinese = chinese; this.percent = percent; }
+    }
+
+    private static final class Dataset {
+        private final String sheetName;
+        private final String title;
+        private final String description;
+        private final String query;
+        private final Column[] columns;
+        private Dataset(String sheetName, String title, String description, String query, Column... columns) {
+            this.sheetName = sheetName; this.title = title; this.description = description; this.query = query; this.columns = columns;
         }
-        return formatter.formatCellValue(cell).trim();
-    }
-
-    private static boolean rowIsBlank(Row row, DataFormatter formatter) {
-        for (Cell cell : row) if (!formatter.formatCellValue(cell).trim().isEmpty()) return false;
-        return true;
-    }
-
-    private static void requireDateHeader(Iterable<String> values) {
-        for (String value : values) if ("date".equals(value)) return;
-        throw new IllegalArgumentException("缺少必填列“日期”");
-    }
-
-    private static String canonicalHeader(String source) {
-        if (source == null) return null;
-        return HEADER_ALIASES.get(source.replace("\uFEFF", "").trim().toLowerCase(Locale.ROOT).replace(" ", ""));
-    }
-
-    private static Map<String, String> buildHeaderAliases() {
-        Map<String, String> map = new HashMap<>();
-        alias(map, "date", "日期", "date", "业务日期");
-        alias(map, "inbound", "入库箱数", "入库", "inbound");
-        alias(map, "outbound", "出库箱数", "出库", "outbound");
-        alias(map, "picking", "拣货任务", "拣货", "picking");
-        alias(map, "forkliftTasks", "叉车任务", "forklifttasks", "叉车任务数");
-        alias(map, "inventoryAccuracy", "库存准确率", "inventoryaccuracy");
-        alias(map, "receivingTimely", "入库及时率", "receivingtimely");
-        alias(map, "deliveryTimely", "出库及时率", "deliverytimely");
-        alias(map, "exceptions", "异常数", "exceptions", "异常事件数");
-        alias(map, "receiptMinutes", "收货时长(分钟)", "收货时长（分钟）", "receiptminutes", "收货时长");
-        alias(map, "pickingMinutes", "拣货时长(分钟)", "拣货时长（分钟）", "pickingminutes", "拣货时长");
-        alias(map, "averageDuration", "平均作业时长(分钟)", "平均作业时长（分钟）", "averageduration", "平均作业时长");
-        alias(map, "dockUtilization", "月台利用率", "dockutilization");
-        alias(map, "overtimeHours", "加班工时", "overtimehours");
-        return map;
-    }
-
-    private static void alias(Map<String, String> map, String canonical, String... aliases) {
-        for (String value : aliases) map.put(value.toLowerCase(Locale.ROOT).replace(" ", ""), canonical);
-    }
-
-    private static String parseDate(String value) {
-        if (value == null || value.trim().isEmpty()) throw new IllegalArgumentException("日期不能为空");
-        List<DateTimeFormatter> formats = Arrays.asList(DateTimeFormatter.ISO_LOCAL_DATE, DateTimeFormatter.ofPattern("yyyy/M/d"), DateTimeFormatter.ofPattern("M/d/yyyy"), DateTimeFormatter.ofPattern("M/d/yy"));
-        for (DateTimeFormatter format : formats) {
-            try { return LocalDate.parse(value.trim(), format).toString(); } catch (DateTimeParseException ignored) { }
-        }
-        throw new IllegalArgumentException("日期格式应为 yyyy-MM-dd");
-    }
-
-    private static int integer(String value, String field) { return (int) Math.round(number(value, field)); }
-
-    private static double number(String value, String field) {
-        if (value == null || value.trim().isEmpty()) return 0;
-        try { return Double.parseDouble(value.trim().replace(",", "")); }
-        catch (NumberFormatException error) { throw new IllegalArgumentException(field + "不是有效数字"); }
-    }
-
-    private static double rate(String value, String field) {
-        if (value == null || value.trim().isEmpty()) return 0;
-        boolean percent = value.contains("%");
-        double parsed = number(value.replace("%", ""), field);
-        if (percent || parsed > 1.5) parsed /= 100;
-        if (parsed < 0 || parsed > 1) throw new IllegalArgumentException(field + "应在 0% 至 100% 之间");
-        return parsed;
     }
 
     public static class ExportFile {
         private final String filename;
         private final String contentType;
         private final byte[] content;
-        public ExportFile(String filename, String contentType, byte[] content) {
-            this.filename = filename;
-            this.contentType = contentType;
-            this.content = content;
-        }
+        public ExportFile(String filename, String contentType, byte[] content) { this.filename = filename; this.contentType = contentType; this.content = content; }
         public String getFilename() { return filename; }
         public String getContentType() { return contentType; }
         public byte[] getContent() { return content; }
-        public ByteArrayInputStream inputStream() { return new ByteArrayInputStream(content); }
     }
 }

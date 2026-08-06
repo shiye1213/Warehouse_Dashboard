@@ -22,14 +22,18 @@ import {
 } from 'lucide-vue-next'
 import WarehouseScopeBar from '../components/WarehouseScopeBar.vue'
 import { useDashboard } from '../composables/useDashboard'
+import { useRawMaterialDashboard } from '../composables/useRawMaterialDashboard'
+import { PROJECT_REFRESH_INTERVAL_MS, useProjectRefresh } from '../composables/useProjectRefresh'
 
 const route = useRoute()
 const router = useRouter()
 const collapsed = ref(localStorage.getItem('warehouse.sidebar.collapsed') === 'true')
 const mobileOpen = ref(false)
 const now = ref(new Date())
-const { snapshot, loading, refresh } = useDashboard()
+const { snapshot } = useDashboard()
 const scopeVisible = computed(() => !['finished-goods', 'raw-material', 'data-center', 'zone-detail'].includes(String(route.name || '')))
+useRawMaterialDashboard()
+const { refreshing, refreshProject } = useProjectRefresh()
 
 const navItems = [
   { to: '/raw-material', label: '原料库看板', note: '生产保障与库存风险', icon: PackageSearch },
@@ -46,6 +50,7 @@ const navItems = [
 const currentLabel = computed(() => route.meta?.title || '仓储运营指挥中心')
 const latestDate = computed(() => snapshot.value?.meta?.latestDate || '—')
 let timer
+let refreshTimer
 
 function toggleSidebar() {
   collapsed.value = !collapsed.value
@@ -70,16 +75,19 @@ function openMobileNavigation() {
 watch(() => route.fullPath, () => { mobileOpen.value = false })
 onMounted(() => {
   timer = window.setInterval(() => { now.value = new Date() }, 1000)
+  refreshProject('startup').catch(() => {})
+  refreshTimer = window.setInterval(() => refreshProject('auto').catch(() => {}), PROJECT_REFRESH_INTERVAL_MS)
   window.addEventListener('warehouse:open-navigation', openMobileNavigation)
 })
 onBeforeUnmount(() => {
   window.clearInterval(timer)
+  window.clearInterval(refreshTimer)
   window.removeEventListener('warehouse:open-navigation', openMobileNavigation)
 })
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'is-collapsed': collapsed, 'is-mobile-open': mobileOpen, 'is-board-route': ['finished-goods', 'raw-material'].includes(route.name) }">
+  <div class="app-shell" :class="{ 'is-collapsed': collapsed, 'is-mobile-open': mobileOpen, 'is-board-route': ['finished-goods', 'raw-material'].includes(route.name), 'is-data-refreshing': refreshing }" :aria-busy="refreshing">
     <button v-if="mobileOpen" class="mobile-scrim" aria-label="关闭导航" @click="mobileOpen = false" />
 
     <aside class="sidebar" aria-label="主导航">
@@ -131,9 +139,9 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="topbar-actions">
-          <div class="connection"><Wifi :size="15" /><span>实时服务</span></div>
+          <div class="connection"><Wifi :size="15" /><span>30 秒自动刷新</span></div>
           <div class="clock"><strong>{{ now.toLocaleTimeString('zh-CN', { hour12: false }) }}</strong><span>{{ now.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric', weekday: 'short' }) }}</span></div>
-          <button class="icon-button" :class="{ spinning: loading }" aria-label="刷新数据" title="刷新数据" @click="refresh"><RefreshCw :size="18" /></button>
+          <button class="icon-button" :class="{ spinning: refreshing }" :disabled="refreshing" aria-label="刷新全部数据" title="刷新全部数据" @click="refreshProject('manual')"><RefreshCw :size="18" /></button>
           <button class="primary-mini" @click="navigate('/data-center')"><Download :size="16" /><span>数据交换</span></button>
         </div>
       </header>

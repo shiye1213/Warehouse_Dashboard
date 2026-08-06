@@ -20,6 +20,8 @@ const props = defineProps({
   xAxisLabelMargin: { type: Number, default: 8 },
   niceYAxis: { type: Boolean, default: false },
   yAxisSplitNumber: { type: Number, default: 5 },
+  yAxisMax: { type: Number, default: null },
+  yAxisInterval: { type: Number, default: null },
   dimensional: { type: Boolean, default: false },
   light: { type: Boolean, default: false },
 })
@@ -49,8 +51,16 @@ function getNiceInterval(maxValue, splitNumber) {
 const yAxisScale = computed(() => {
   if (!props.niceYAxis) return null
   const dataMax = Math.max(0, ...seriesValues.value)
-  const interval = getNiceInterval(dataMax, props.yAxisSplitNumber)
-  const max = Math.max(interval, Math.ceil(dataMax / interval) * interval)
+  const requestedInterval = Number(props.yAxisInterval)
+  const interval = requestedInterval > 0
+    ? requestedInterval
+    : getNiceInterval(dataMax, props.yAxisSplitNumber)
+  const requestedMax = Number(props.yAxisMax)
+  const max = Math.max(
+    interval,
+    Number.isFinite(requestedMax) ? requestedMax : 0,
+    Math.ceil(dataMax / interval) * interval,
+  )
   return { min: 0, max: Number(max.toPrecision(12)), interval: Number(interval.toPrecision(12)) }
 })
 
