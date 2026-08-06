@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Activity, AlertTriangle, Box, Boxes, ChevronRight, ClipboardCheck, Clock3,
@@ -7,9 +7,11 @@ import {
   Warehouse,
 } from 'lucide-vue-next'
 import TrendChart from '../components/TrendChart.vue'
-import finishedGoodsData from '../data/finishedGoodsData'
+import finishedGoodsSeed from '../data/finishedGoodsData'
+import { dashboardApi } from '../services/api'
 
 const router = useRouter()
+const finishedGoodsData = reactive(finishedGoodsSeed)
 const daily = finishedGoodsData.daily
 const zones = finishedGoodsData.zones
 const animatedZoneOccupancy = ref(zones.map(() => 0))
@@ -20,6 +22,25 @@ const inventory = finishedGoodsData.inventory
 const targets = finishedGoodsData.targets
 const meta = finishedGoodsData.meta
 const latest = daily.at(-1)
+
+function syncRows(target, source) {
+  source.forEach((row, index) => {
+    if (target[index]) Object.assign(target[index], row)
+    else target.push(row)
+  })
+  if (target.length > source.length) target.splice(source.length)
+}
+
+async function loadFinishedGoods() {
+  const data = await dashboardApi.getWarehouseSnapshot('WH-FG03', 31)
+  Object.assign(meta, data.meta || {})
+  syncRows(daily, data.daily || [])
+  syncRows(zones, data.zones || [])
+  syncRows(alerts, data.alerts || [])
+  syncRows(inventory, data.inventory || [])
+  syncRows(targets, data.targets || [])
+  if (daily.length) Object.assign(latest, daily.at(-1))
+}
 
 const trendSeries = [
   { name: '成品入库量', key: 'inbound', color: '#28c8ff', area: true },
@@ -276,6 +297,10 @@ function selectAlert(index) {
 }
 
 onMounted(() => {
+  loadFinishedGoods().then(() => {
+    animateZoneOccupancy()
+    startAlertCarousel()
+  }).catch(() => {})
   animateZoneOccupancy()
   startAlertCarousel()
 })

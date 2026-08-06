@@ -4,6 +4,7 @@ import com.intco.warehouse.service.WarehouseDataService;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -24,6 +25,18 @@ public class DashboardController {
     @GetMapping("/dashboard/overview")
     public Map<String, Object> overview(@RequestParam(defaultValue = "31") int range) {
         return dataService.snapshot(range);
+    }
+
+    @GetMapping("/warehouses")
+    public List<Map<String, Object>> warehouses() {
+        return dataService.warehouses();
+    }
+
+    @GetMapping("/dashboard/warehouses/{warehouseId}")
+    public ResponseEntity<Map<String, Object>> warehouseDashboard(@PathVariable String warehouseId,
+                                                                  @RequestParam(defaultValue = "31") int range) {
+        return dataService.warehouseSnapshot(warehouseId, range)
+                .map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
 
     @GetMapping("/zones/{code}")

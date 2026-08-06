@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 import rawMaterialSnapshot from '../data/raw-material-dashboard.json'
+import { dashboardApi } from '../services/api'
 import { registerProjectRefresh } from './useProjectRefresh'
 
 const snapshot = ref(rawMaterialSnapshot)
@@ -12,12 +13,12 @@ function refresh() {
 
   loading.value = true
   error.value = ''
-  pendingRefresh = Promise.resolve().then(() => {
-    snapshot.value = {
-      ...rawMaterialSnapshot,
-      meta: { ...rawMaterialSnapshot.meta, refreshedAt: new Date().toISOString() },
-    }
-    return snapshot.value
+  pendingRefresh = dashboardApi.getWarehouseSnapshot('WH-RM01', 31).then((data) => {
+    snapshot.value = data
+    return data
+  }).catch((cause) => {
+    error.value = cause.message || '原料库数据加载失败'
+    throw cause
   }).finally(() => {
     loading.value = false
     pendingRefresh = null
