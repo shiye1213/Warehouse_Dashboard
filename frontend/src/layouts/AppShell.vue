@@ -10,6 +10,7 @@ import {
   Database,
   Download,
   Menu,
+  PackageSearch,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
@@ -28,10 +29,11 @@ const collapsed = ref(localStorage.getItem('warehouse.sidebar.collapsed') === 't
 const mobileOpen = ref(false)
 const now = ref(new Date())
 const { snapshot, loading, refresh } = useDashboard()
-const scopeVisible = computed(() => !['overview', 'data-center', 'zone-detail'].includes(String(route.name || '')))
+const scopeVisible = computed(() => !['overview', 'raw-material', 'data-center', 'zone-detail'].includes(String(route.name || '')))
 
 const navItems = [
   { to: '/overview', label: '经营总览', note: '客户与高管视图', icon: CircleGauge },
+  { to: '/raw-material', label: '原料库看板', note: '生产保障与库存风险', icon: PackageSearch },
   { to: '/operations', label: '作业运营', note: '入库 · 拣货 · 出库', icon: Route },
   { to: '/performance', label: '履约质量', note: '时效与准确率', icon: ShieldCheck },
   { to: '/zones', label: '空间与库存', note: '库容与库区状态', icon: Boxes },
@@ -72,7 +74,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'is-collapsed': collapsed, 'is-mobile-open': mobileOpen, 'is-board-route': route.name === 'overview' }">
+  <div class="app-shell" :class="{ 'is-collapsed': collapsed, 'is-mobile-open': mobileOpen, 'is-board-route': ['overview', 'raw-material'].includes(route.name) }">
     <button v-if="mobileOpen" class="mobile-scrim" aria-label="关闭导航" @click="mobileOpen = false" />
 
     <aside class="sidebar" aria-label="主导航">
