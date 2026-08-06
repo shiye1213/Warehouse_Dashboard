@@ -34,6 +34,7 @@ const scopeVisible = computed(() => !['overview', 'raw-material', 'data-center',
 const navItems = [
   { to: '/overview', label: '经营总览', note: '客户与高管视图', icon: CircleGauge },
   { to: '/raw-material', label: '原料库看板', note: '生产保障与库存风险', icon: PackageSearch },
+  { to: '/box-dashboard', label: '箱盒库看板', note: '包装物料周转中心', icon: Boxes },
   { to: '/operations', label: '作业运营', note: '入库 · 拣货 · 出库', icon: Route },
   { to: '/performance', label: '履约质量', note: '时效与准确率', icon: ShieldCheck },
   { to: '/zones', label: '空间与库存', note: '库容与库区状态', icon: Boxes },
@@ -52,6 +53,10 @@ function toggleSidebar() {
 }
 
 function navigate(path) {
+  if (path === '/box-dashboard') {
+    window.location.href = '/box-dashboard/'
+    return
+  }
   const query = path !== '/overview' && route.query.warehouse
     ? { warehouse: route.query.warehouse } : {}
   router.push({ path, query })
