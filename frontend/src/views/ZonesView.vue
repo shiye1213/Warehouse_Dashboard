@@ -6,21 +6,22 @@ import MetricCard from '../components/MetricCard.vue'
 import PageState from '../components/PageState.vue'
 import PanelCard from '../components/PanelCard.vue'
 import StatusBadge from '../components/StatusBadge.vue'
-import { formatNumber, formatPercent, useDashboard } from '../composables/useDashboard'
+import { formatNumber, formatPercent } from '../composables/useDashboard'
+import { useScopedDashboard } from '../composables/useWarehouseScope'
 
 const router = useRouter()
-const { snapshot, loading, error, refresh } = useDashboard()
+const { snapshot, loading, error, refresh, selectedWarehouse } = useScopedDashboard()
 const summary = computed(() => snapshot.value?.summary || {})
 const zones = computed(() => [...(snapshot.value?.zones || [])].sort((a, b) => b.occupancy - a.occupancy))
 
-function openZone(zone) { router.push(`/zones/${encodeURIComponent(zone.code)}`) }
+function openZone(zone) { router.push({ path: `/zones/${encodeURIComponent(zone.code)}`, query: { warehouse: selectedWarehouse.value } }) }
 function tone(zone) { return zone.occupancy >= 0.85 ? 'danger' : zone.occupancy >= 0.75 ? 'warning' : 'normal' }
 </script>
 
 <template>
   <div class="page">
     <PageState :loading="loading && !snapshot" :error="error" @retry="refresh">
-      <div class="page-intro"><div><p>SPACE INTELLIGENCE</p><h2>空间与库存态势</h2><span>统一查看库容、占用结构和可用空间，支持高峰期调拨决策。</span></div><div class="snapshot-note"><span class="live-dot" /><div><strong>库区快照</strong><small>{{ snapshot?.meta?.zoneSnapshotDate }} · {{ zones.length }} 个已同步库区</small></div></div></div>
+      <div class="page-intro"><div><p>SPACE INTELLIGENCE · {{ selectedWarehouse }}</p><h2>{{ selectedWarehouse }}空间与库存态势</h2><span>统一查看库容、占用结构和可用空间，支持高峰期调拨决策。</span></div><div class="snapshot-note"><span class="live-dot" /><div><strong>库区快照</strong><small>{{ snapshot?.meta?.zoneSnapshotDate }} · {{ zones.length }} 个已同步库区</small></div></div></div>
       <section class="metric-grid four">
         <MetricCard label="总库位" :value="formatNumber(summary.totalLocations)" unit="个" note="已同步范围" tone="blue"><template #icon><Warehouse :size="18" /></template></MetricCard>
         <MetricCard label="已用库位" :value="formatNumber(summary.occupiedLocations)" unit="个" note="动态占用" tone="mint"><template #icon><Boxes :size="18" /></template></MetricCard>

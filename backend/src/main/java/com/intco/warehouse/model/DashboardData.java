@@ -8,6 +8,7 @@ import java.util.Map;
 public class DashboardData {
     private Map<String, Object> meta = new LinkedHashMap<>();
     private List<DailyMetric> daily = new ArrayList<>();
+    private List<WarehouseDailyMetric> warehouseDaily = new ArrayList<>();
     private List<Zone> zones = new ArrayList<>();
     private List<Alert> alerts = new ArrayList<>();
     private List<Target> targets = new ArrayList<>();
@@ -17,6 +18,8 @@ public class DashboardData {
     public void setMeta(Map<String, Object> meta) { this.meta = meta; }
     public List<DailyMetric> getDaily() { return daily; }
     public void setDaily(List<DailyMetric> daily) { this.daily = daily; }
+    public List<WarehouseDailyMetric> getWarehouseDaily() { return warehouseDaily; }
+    public void setWarehouseDaily(List<WarehouseDailyMetric> warehouseDaily) { this.warehouseDaily = warehouseDaily; }
     public List<Zone> getZones() { return zones; }
     public void setZones(List<Zone> zones) { this.zones = zones; }
     public List<Alert> getAlerts() { return alerts; }
@@ -70,6 +73,43 @@ public class DashboardData {
         public void setDockUtilization(double dockUtilization) { this.dockUtilization = dockUtilization; }
         public double getOvertimeHours() { return overtimeHours; }
         public void setOvertimeHours(double overtimeHours) { this.overtimeHours = overtimeHours; }
+    }
+
+    public static class WarehouseDailyMetric extends DailyMetric {
+        private String warehouseId;
+        private String warehouseName;
+        private String warehouseType;
+        private int inboundOrders;
+        private int outboundOrders;
+        private double rawInboundTon;
+        private double rawOutboundTon;
+        private int finishedInboundCarton;
+        private int finishedOutboundCarton;
+        private int packagingInboundPiece;
+        private int packagingOutboundPiece;
+
+        public String getWarehouseId() { return warehouseId; }
+        public void setWarehouseId(String warehouseId) { this.warehouseId = warehouseId; }
+        public String getWarehouseName() { return warehouseName; }
+        public void setWarehouseName(String warehouseName) { this.warehouseName = warehouseName; }
+        public String getWarehouseType() { return warehouseType; }
+        public void setWarehouseType(String warehouseType) { this.warehouseType = warehouseType; }
+        public int getInboundOrders() { return inboundOrders; }
+        public void setInboundOrders(int inboundOrders) { this.inboundOrders = inboundOrders; }
+        public int getOutboundOrders() { return outboundOrders; }
+        public void setOutboundOrders(int outboundOrders) { this.outboundOrders = outboundOrders; }
+        public double getRawInboundTon() { return rawInboundTon; }
+        public void setRawInboundTon(double rawInboundTon) { this.rawInboundTon = rawInboundTon; }
+        public double getRawOutboundTon() { return rawOutboundTon; }
+        public void setRawOutboundTon(double rawOutboundTon) { this.rawOutboundTon = rawOutboundTon; }
+        public int getFinishedInboundCarton() { return finishedInboundCarton; }
+        public void setFinishedInboundCarton(int finishedInboundCarton) { this.finishedInboundCarton = finishedInboundCarton; }
+        public int getFinishedOutboundCarton() { return finishedOutboundCarton; }
+        public void setFinishedOutboundCarton(int finishedOutboundCarton) { this.finishedOutboundCarton = finishedOutboundCarton; }
+        public int getPackagingInboundPiece() { return packagingInboundPiece; }
+        public void setPackagingInboundPiece(int packagingInboundPiece) { this.packagingInboundPiece = packagingInboundPiece; }
+        public int getPackagingOutboundPiece() { return packagingOutboundPiece; }
+        public void setPackagingOutboundPiece(int packagingOutboundPiece) { this.packagingOutboundPiece = packagingOutboundPiece; }
     }
 
     public static class Zone {

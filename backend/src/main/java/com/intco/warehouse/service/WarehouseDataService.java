@@ -4,10 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.intco.warehouse.model.DashboardData;
 import com.intco.warehouse.model.DashboardData.Alert;
 import com.intco.warehouse.model.DashboardData.DailyMetric;
+import com.intco.warehouse.model.DashboardData.WarehouseDailyMetric;
 import com.intco.warehouse.model.DashboardData.Zone;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -18,6 +21,10 @@ import java.util.function.ToDoubleFunction;
 import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 import javax.annotation.PostConstruct;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
@@ -45,6 +52,7 @@ public class WarehouseDataService {
         }
         data = objectMapper.readValue(json, DashboardData.class);
         normalizeDaily(data.getDaily());
+        loadWarehouseDaily();
     }
 
     public synchronized DashboardData currentData() {
@@ -67,11 +75,139 @@ public class WarehouseDataService {
         result.put("meta", meta);
         result.put("summary", buildSummary(allRows));
         result.put("trend", trend);
+        result.put("warehouseDaily", data.getWarehouseDaily());
         result.put("zones", data.getZones());
         result.put("alerts", data.getAlerts());
         result.put("targets", data.getTargets());
         result.put("forklifts", data.getForklifts());
         return result;
+    }
+
+    private void loadWarehouseDaily() throws IOException {
+        ClassPathResource source = new ClassPathResource("data/warehouse-data.xlsx");
+        if (!source.exists()) return;
+        List<WarehouseDailyMetric> rows = new ArrayList<>();
+        try (InputStream input = source.getInputStream(); Workbook workbook = new XSSFWorkbook(input)) {
+            Sheet sheet = workbook.getSheet("运营_仓库每日指标");
+            if (sheet == null) return;
+            for (int index = 3; index <= sheet.getLastRowNum(); index++) {
+                Row row = sheet.getRow(index);
+                if (row == null || row.getCell(0) == null) continue;
+                WarehouseDailyMetric item = new WarehouseDailyMetric();
+                item.setDate(row.getCell(0).getLocalDateTimeCellValue().toLocalDate().toString());
+                item.setWarehouseId(text(row, 1));
+                item.setWarehouseName(text(row, 2));
+                item.setWarehouseType(text(row, 3));
+                item.setInboundOrders(integer(row, 4));
+                item.setOutboundOrders(integer(row, 5));
+                item.setRawInboundTon(number(row, 6));
+                item.setRawOutboundTon(number(row, 7));
+                item.setFinishedInboundCarton(integer(row, 8));
+                item.setFinishedOutboundCarton(integer(row, 9));
+                item.setPackagingInboundPiece(integer(row, 10));
+                item.setPackagingOutboundPiece(integer(row, 11));
+                item.setPicking(integer(row, 12));
+                item.setForkliftTasks(integer(row, 13));
+                item.setInventoryAccuracy(number(row, 14));
+                item.setReceivingTimely(number(row, 15));
+                item.setDeliveryTimely(number(row, 16));
+                item.setExceptions(integer(row, 17));
+                item.setReceiptMinutes(number(row, 18));
+                item.setPickingMinutes(number(row, 19));
+                item.setDockUtilization(number(row, 20));
+                item.setOvertimeHours(number(row, 21));
+                rows.add(item);
+            }
+            loadZones(workbook);
+            loadAlerts(workbook);
+        }
+        rows.sort(Comparator.comparing(WarehouseDailyMetric::getDate).thenComparing(WarehouseDailyMetric::getWarehouseName));
+        data.setWarehouseDaily(rows);
+    }
+
+    private void loadZones(Workbook workbook) {
+        Sheet sheet = workbook.getSheet("运营_库区状态");
+        if (sheet == null) return;
+        LocalDate latest = null;
+        for (int index = 3; index <= sheet.getLastRowNum(); index++) {
+            Row row = sheet.getRow(index);
+            if (row == null || row.getCell(0) == null) continue;
+            LocalDate date = row.getCell(0).getLocalDateTimeCellValue().toLocalDate();
+            if (latest == null || date.isAfter(latest)) latest = date;
+        }
+        if (latest == null) return;
+        List<Zone> zones = new ArrayList<>();
+        for (int index = 3; index <= sheet.getLastRowNum(); index++) {
+            Row row = sheet.getRow(index);
+            if (row == null || row.getCell(0) == null
+                    || !latest.equals(row.getCell(0).getLocalDateTimeCellValue().toLocalDate())) continue;
+            Zone item = new Zone();
+            item.setSnapshotDate(latest.toString());
+            item.setWarehouse(text(row, 2));
+            item.setCode(text(row, 4));
+            item.setName(text(row, 5));
+            item.setCapacity(integer(row, 6));
+            item.setOccupied(integer(row, 7));
+            item.setAvailable(integer(row, 8));
+            item.setOccupancy(number(row, 9));
+            item.setMaterialTypes(integer(row, 10));
+            item.setAbnormal(integer(row, 11));
+            item.setFrozen(integer(row, 12));
+            item.setManager(text(row, 13));
+            item.setStatus(text(row, 14));
+            zones.add(item);
+        }
+        data.setZones(zones);
+        data.getMeta().put("zoneSnapshotDate", latest.toString());
+        data.getMeta().put("availableZoneRows", zones.size());
+    }
+
+    private void loadAlerts(Workbook workbook) {
+        Sheet sheet = workbook.getSheet("运营_异常事件");
+        if (sheet == null) return;
+        List<Alert> alerts = new ArrayList<>();
+        for (int index = 3; index <= sheet.getLastRowNum(); index++) {
+            Row row = sheet.getRow(index);
+            if (row == null || row.getCell(0) == null) continue;
+            LocalDateTime occurredAt = row.getCell(1).getLocalDateTimeCellValue();
+            Alert item = new Alert();
+            item.setId(text(row, 0));
+            item.setDate(occurredAt.toLocalDate().toString());
+            item.setTime(occurredAt.toLocalTime().toString());
+            item.setType(text(row, 2));
+            item.setWarehouse(text(row, 4));
+            item.setZoneCode(text(row, 16));
+            item.setZone(text(row, 17));
+            item.setTitle(item.getType() + " · " + item.getZone());
+            item.setSeverity(text(row, 18));
+            item.setStatus(text(row, 19));
+            item.setOwner(text(row, 20));
+            item.setResponseMinutes(integer(row, 21));
+            item.setSlaHours(number(row, 22));
+            item.setDurationHours(number(row, 25) / 60d);
+            item.setSlaBreached("是".equals(text(row, 26)));
+            if (row.getCell(24) != null && row.getCell(24).getLocalDateTimeCellValue() != null)
+                item.setClosedAt(row.getCell(24).getLocalDateTimeCellValue().toString());
+            item.setDescription("根因：" + text(row, 27));
+            item.setRecommendation(text(row, 28));
+            item.setMaterial(text(row, 9));
+            item.setProject(text(row, 7));
+            alerts.add(item);
+        }
+        data.setAlerts(alerts);
+        data.getMeta().put("availableExceptionRows", alerts.size());
+    }
+
+    private static String text(Row row, int column) {
+        return row.getCell(column) == null ? "" : row.getCell(column).getStringCellValue();
+    }
+
+    private static double number(Row row, int column) {
+        return row.getCell(column) == null ? 0 : row.getCell(column).getNumericCellValue();
+    }
+
+    private static int integer(Row row, int column) {
+        return (int) Math.round(number(row, column));
     }
 
     public synchronized Optional<Map<String, Object>> zoneDetail(String code) {

@@ -6,9 +6,10 @@ import PageState from '../components/PageState.vue'
 import PanelCard from '../components/PanelCard.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import TrendChart from '../components/TrendChart.vue'
-import { formatPercent, useDashboard } from '../composables/useDashboard'
+import { formatPercent } from '../composables/useDashboard'
+import { useScopedDashboard } from '../composables/useWarehouseScope'
 
-const { snapshot, loading, error, refresh } = useDashboard()
+const { snapshot, loading, error, refresh, selectedWarehouse } = useScopedDashboard()
 const summary = computed(() => snapshot.value?.summary || {})
 const rows = computed(() => snapshot.value?.trend || [])
 const targetByKey = computed(() => Object.fromEntries((snapshot.value?.targets || []).map((item) => [item.key, item])))
@@ -44,7 +45,7 @@ function display(value, target) {
 <template>
   <div class="page">
     <PageState :loading="loading && !snapshot" :error="error" @retry="refresh">
-      <div class="page-intro"><div><p>SERVICE COMMITMENT</p><h2>履约质量与客户承诺</h2><span>让时效、准确性和异常闭环都可量化、可追踪、可解释。</span></div><div class="quality-seal"><Award :size="21" /><span><strong>服务水平稳定</strong><small>3 项核心承诺持续监测</small></span></div></div>
+      <div class="page-intro"><div><p>SERVICE COMMITMENT · {{ selectedWarehouse }}</p><h2>{{ selectedWarehouse }}履约质量与客户承诺</h2><span>让时效、准确性和异常闭环都可量化、可追踪、可解释。</span></div><div class="quality-seal"><Award :size="21" /><span><strong>服务水平稳定</strong><small>3 项核心承诺持续监测</small></span></div></div>
       <section class="metric-grid four">
         <MetricCard label="库存准确率" :value="formatPercent(summary.inventoryAccuracy)" :delta="summary.deltas?.inventoryAccuracy" note="目标 98.0%" tone="mint"><template #icon><Crosshair :size="18" /></template></MetricCard>
         <MetricCard label="入库及时率" :value="formatPercent(summary.receivingTimely)" :delta="summary.deltas?.receivingTimely" note="目标 95.0%" tone="blue"><template #icon><Clock3 :size="18" /></template></MetricCard>

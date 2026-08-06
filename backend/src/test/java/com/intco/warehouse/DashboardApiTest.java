@@ -29,7 +29,9 @@ class DashboardApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.summary.healthScore", greaterThan(0)))
                 .andExpect(jsonPath("$.trend", hasSize(7)))
-                .andExpect(jsonPath("$.zones", hasSize(4)))
+                .andExpect(jsonPath("$.warehouseDaily", hasSize(93)))
+                .andExpect(jsonPath("$.zones", hasSize(12)))
+                .andExpect(jsonPath("$.alerts", hasSize(208)))
                 .andExpect(jsonPath("$.targets", hasSize(7)));
     }
 
