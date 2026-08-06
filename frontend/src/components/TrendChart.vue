@@ -1,11 +1,11 @@
 <script setup>
 import * as echarts from 'echarts/core'
 import { GridComponent, LegendComponent, TooltipComponent } from 'echarts/components'
-import { BarChart, LineChart } from 'echarts/charts'
+import { BarChart, EffectScatterChart, LineChart } from 'echarts/charts'
 import { CanvasRenderer } from 'echarts/renderers'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
-echarts.use([GridComponent, LegendComponent, TooltipComponent, BarChart, LineChart, CanvasRenderer])
+echarts.use([GridComponent, LegendComponent, TooltipComponent, BarChart, EffectScatterChart, LineChart, CanvasRenderer])
 
 const props = defineProps({
   rows: { type: Array, default: () => [] },
@@ -14,6 +14,9 @@ const props = defineProps({
   showLegend: { type: Boolean, default: true },
   drawAnimation: { type: Boolean, default: false },
   compact: { type: Boolean, default: false },
+  latestPulse: { type: Boolean, default: false },
+  yMin: { type: Number, default: undefined },
+  yMax: { type: Number, default: undefined },
 })
 
 const chartEl = ref(null)
@@ -56,33 +59,54 @@ const options = computed(() => ({
   },
   yAxis: {
     type: 'value',
+    min: props.yMin,
+    max: props.yMax,
     splitNumber: 4,
     axisLabel: { show: !props.compact, color: '#6f8584', fontSize: 10 },
     splitLine: { lineStyle: { color: props.compact ? 'rgba(115, 170, 211, .07)' : 'rgba(150, 184, 180, .08)' } },
   },
-  series: props.series.map((item) => ({
-    name: item.name,
-    type: item.type || 'line',
-    smooth: item.smooth !== false,
-    symbol: item.symbol || 'circle',
-    showSymbol: !props.compact && props.rows.length < 10,
-    symbolSize: 5,
-    barMaxWidth: 20,
-    data: props.rows.map((row, index) => (
-      !props.drawAnimation || index < drawProgress.value
-        ? Number(row[item.key] || 0) * (item.percent ? 100 : 1)
-        : null
-    )),
-    lineStyle: { width: props.compact ? 1.7 : 2, type: item.lineStyle || 'solid' },
-    itemStyle: { borderRadius: item.type === 'bar' ? [4, 4, 0, 0] : 0 },
-    areaStyle: item.area ? {
-      opacity: 1,
-      color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-        { offset: 0, color: `${item.color}35` },
-        { offset: 1, color: `${item.color}00` },
-      ]),
-    } : undefined,
-  })),
+  series: [
+    ...props.series.map((item) => ({
+      name: item.name,
+      type: item.type || 'line',
+      smooth: item.smooth !== false,
+      symbol: item.symbol || 'circle',
+      showSymbol: !props.compact && props.rows.length < 10,
+      symbolSize: 5,
+      barMaxWidth: 20,
+      data: props.rows.map((row, index) => (
+        !props.drawAnimation || index < drawProgress.value
+          ? Number(row[item.key] || 0) * (item.percent ? 100 : 1)
+          : null
+      )),
+      lineStyle: { width: props.compact ? 1.7 : 2, type: item.lineStyle || 'solid' },
+      itemStyle: { borderRadius: item.type === 'bar' ? [4, 4, 0, 0] : 0 },
+      areaStyle: item.area ? {
+        opacity: 1,
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: item.color + '35' },
+          { offset: 1, color: item.color + '00' },
+        ]),
+      } : undefined,
+    })),
+    ...(props.latestPulse && props.rows.length ? props.series
+      .filter((item) => (item.type || 'line') === 'line')
+      .map((item) => ({
+        type: 'effectScatter',
+        name: '',
+        silent: true,
+        tooltip: { show: false },
+        symbol: item.symbol || 'circle',
+        symbolSize: 8,
+        z: 12,
+        data: [[
+          props.rows.at(-1)?.date?.slice(5).replace('-', '/') || props.rows.at(-1)?.label || '',
+          Number(props.rows.at(-1)?.[item.key] || 0) * (item.percent ? 100 : 1),
+        ]],
+        itemStyle: { color: item.color, shadowBlur: 14, shadowColor: item.color },
+        rippleEffect: { period: 2.8, scale: 3.2, brushType: 'stroke' },
+      })) : []),
+  ],
 }))
 
 function render() {
@@ -90,6 +114,7 @@ function render() {
   if (!chart) chart = echarts.init(chartEl.value)
   chart.setOption(options.value, true)
 }
+
 
 function playDrawAnimation() {
   cancelAnimationFrame(drawAnimationFrame)
@@ -133,4 +158,4 @@ onBeforeUnmount(() => {
 })
 </script>
 
-<template><div ref="chartEl" class="chart-canvas" :style="{ height: `${height}px` }" /></template>
+<template><div ref="chartEl" class="chart-canvas" :style="{ height: height + 'px' }" /></template>

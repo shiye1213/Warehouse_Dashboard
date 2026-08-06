@@ -2,8 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  Activity, AlertTriangle, Box, Boxes, ChevronRight, ClipboardCheck, Clock3,
-  Database, Layers3, Menu, PackageCheck, ScanLine, ShieldCheck, Truck, Users,
+  Activity, AlertTriangle, Box, ChevronRight, ClipboardCheck, Clock3,
+  Layers3, Menu, PackageCheck, RefreshCw, ScanLine, ShieldCheck, Truck, Users,
   Warehouse,
 } from 'lucide-vue-next'
 import TrendChart from '../components/TrendChart.vue'
@@ -14,6 +14,11 @@ const daily = finishedGoodsData.daily
 const zones = finishedGoodsData.zones
 const animatedZoneOccupancy = ref(zones.map(() => 0))
 let zoneAnimationFrame
+const refreshVersion = ref(0)
+const refreshing = ref(false)
+const showUpdated = ref(false)
+let refreshTimer
+let updatedTimer
 
 const alerts = finishedGoodsData.alerts
 const inventory = finishedGoodsData.inventory
@@ -30,6 +35,51 @@ const sum = (rows, key) => rows.reduce((total, row) => total + Number(row[key] |
 const average = (rows, key) => rows.length ? sum(rows, key) / rows.length : 0
 const formatNumber = (value, digits = 0) => new Intl.NumberFormat('zh-CN', { maximumFractionDigits: digits }).format(Number(value || 0))
 const formatPercent = (value, digits = 1) => (Number(value || 0) * 100).toFixed(digits) + '%'
+
+const countAnimationFrames = new WeakMap()
+function playCountUp(el, displayValue) {
+  const targetText = String(displayValue ?? '0')
+  const normalized = targetText.replace(/,/g, '')
+  const match = normalized.match(/-?[0-9]+(?:\.[0-9]+)?/)
+  if (!match) {
+    el.textContent = targetText
+    return
+  }
+
+  const target = Number(match[0])
+  const decimals = (match[0].split('.')[1] || '').length
+  const suffix = normalized.slice((match.index || 0) + match[0].length)
+  const prefix = normalized.slice(0, match.index || 0)
+  const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  cancelAnimationFrame(countAnimationFrames.get(el))
+  if (reducedMotion) {
+    el.textContent = targetText
+    return
+  }
+
+  const duration = 1150
+  let startedAt
+  const tick = (timestamp) => {
+    startedAt ??= timestamp
+    const progress = Math.min((timestamp - startedAt) / duration, 1)
+    const eased = 1 - Math.pow(1 - progress, 3)
+    const current = target * eased
+    const number = new Intl.NumberFormat('zh-CN', {
+      minimumFractionDigits: decimals,
+      maximumFractionDigits: decimals,
+    }).format(current)
+    el.textContent = prefix + number + suffix
+    if (progress < 1) countAnimationFrames.set(el, requestAnimationFrame(tick))
+  }
+  countAnimationFrames.set(el, requestAnimationFrame(tick))
+}
+
+const vCountUp = {
+  mounted: (el, binding) => playCountUp(el, binding.value),
+  updated: (el, binding) => {
+    if (binding.value !== binding.oldValue) playCountUp(el, binding.value)
+  },
+}
 
 const zoneCapacity = computed(() => sum(zones, 'capacity'))
 const zoneOccupied = computed(() => sum(zones, 'occupied'))
@@ -211,6 +261,8 @@ function formatDelta(value) {
 }
 
 function animateZoneOccupancy() {
+  cancelAnimationFrame(zoneAnimationFrame)
+  animatedZoneOccupancy.value = zones.map(() => 0)
   const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   if (reducedMotion) {
     animatedZoneOccupancy.value = zones.map((zone) => Number(zone.occupancy || 0))
@@ -275,13 +327,24 @@ function selectAlert(index) {
   startAlertCarousel()
 }
 
-onMounted(() => {
+function triggerRefresh(initial = false) {
+  window.clearTimeout(refreshTimer)
+  window.clearTimeout(updatedTimer)
+  refreshing.value = !initial
+  showUpdated.value = true
+  refreshVersion.value += 1
   animateZoneOccupancy()
   startAlertCarousel()
-})
+  refreshTimer = window.setTimeout(() => { refreshing.value = false }, 720)
+  updatedTimer = window.setTimeout(() => { showUpdated.value = false }, 2200)
+}
+
+onMounted(() => triggerRefresh(true))
 onBeforeUnmount(() => {
   cancelAnimationFrame(zoneAnimationFrame)
   clearInterval(alertCarouselTimer)
+  window.clearTimeout(refreshTimer)
+  window.clearTimeout(updatedTimer)
 })
 
 function severityTone(severity) {
@@ -301,7 +364,7 @@ function openNavigation() {
 
 <template>
   <div class="page finished-board-page">
-    <section class="finished-board verified-board" aria-label="成品库运营信息看板">
+    <section class="finished-board verified-board" :class="{ 'is-refreshing': refreshing }" aria-label="成品库运营信息看板">
       <header class="finished-header">
         <div class="finished-brand">
           <button class="finished-menu" type="button" aria-label="打开主导航" @click="openNavigation"><Menu :size="19" /></button>
@@ -317,18 +380,21 @@ function openNavigation() {
           <div><span>数据周期</span><strong>{{ meta.period }}</strong></div>
           <i />
           <div><span>最新快照</span><strong>{{ meta.latestDate }}</strong></div>
-          <em><Database :size="13" />模拟数据集</em>
+          <button class="source-sync" type="button" :disabled="refreshing" aria-label="刷新成品库看板数据" @click="triggerRefresh()">
+            <i class="source-live-dot" /><RefreshCw :size="13" /><span>{{ refreshing ? '正在刷新' : '数据已同步' }}</span>
+          </button>
         </div>
       </header>
 
       <div class="metric-ribbon">
-        <button v-for="card in metricCards" :key="card.label" class="metric-tile" :class="'is-' + card.tone" type="button" @click="open(card.path)">
+        <button v-for="(card, cardIndex) in metricCards" :key="card.label + refreshVersion" class="metric-tile" :class="'is-' + card.tone" :style="{ '--tile-index': cardIndex }" type="button" @click="open(card.path)">
           <span class="metric-icon"><component :is="card.icon" :size="31" :stroke-width="1.6" /></span>
           <span class="metric-copy">
             <small>{{ card.label }}</small>
-            <strong>{{ typeof card.value === 'number' ? formatNumber(card.value) : card.value }}<em>{{ card.unit }}</em></strong>
+            <strong><span v-count-up="typeof card.value === 'number' ? formatNumber(card.value) : card.value">{{ typeof card.value === 'number' ? formatNumber(card.value) : card.value }}</span><em>{{ card.unit }}</em></strong>
             <span>{{ card.note }}</span>
           </span>
+          <span v-if="showUpdated" class="metric-updated">已更新</span>
         </button>
       </div>
 
@@ -336,26 +402,26 @@ function openNavigation() {
         <aside class="board-column verified-left">
           <article class="blue-panel source-trend-card" @click="open('/operations')">
             <header class="panel-heading"><div><span>01</span><h2>31 天成品入出库趋势</h2></div><small>单位：箱</small></header>
-            <TrendChart class="finished-trend" :rows="daily" :series="trendSeries" :height="190" draw-animation />
+            <TrendChart :key="'main-trend-' + refreshVersion" class="finished-trend" :rows="daily" :series="trendSeries" :height="190" draw-animation latest-pulse />
           </article>
 
           <article class="blue-panel source-operation-card" @click="open('/operations')">
             <header class="panel-heading"><div><span>02</span><h2>当日作业指标</h2></div><small>{{ meta.latestDate }}</small></header>
-            <div class="source-operation-grid">
-              <div v-for="item in todayOperations" :key="item.label">
+            <div :key="'operations-' + refreshVersion" class="source-operation-grid">
+              <div v-for="(item, itemIndex) in todayOperations" :key="item.label" :style="{ '--item-index': itemIndex }">
                 <component :is="item.icon" :size="17" />
                 <span>{{ item.label }}</span>
-                <strong>{{ typeof item.value === 'number' ? formatNumber(item.value, 1) : item.value }}<small>{{ item.unit }}</small></strong>
+                <strong><span v-count-up="typeof item.value === 'number' ? formatNumber(item.value, 1) : item.value">{{ typeof item.value === 'number' ? formatNumber(item.value, 1) : item.value }}</span><small>{{ item.unit }}</small></strong>
               </div>
             </div>
           </article>
 
           <article class="blue-panel source-week-card">
             <header class="panel-heading"><div><span>03</span><h2>近 7 日运营复盘</h2></div><small>对比前 7 日</small></header>
-            <div class="source-week-list">
-              <div v-for="item in weeklyReview" :key="item.label">
+            <div :key="'week-' + refreshVersion" class="source-week-list">
+              <div v-for="(item, itemIndex) in weeklyReview" :key="item.label" :style="{ '--item-index': itemIndex }">
                 <span>{{ item.label }}</span>
-                <strong>{{ item.value }}<small>{{ item.unit }}</small></strong>
+                <strong><span v-count-up="item.value">{{ item.value }}</span><small>{{ item.unit }}</small></strong>
                 <em :class="{ negative: item.delta < 0 }">{{ formatDelta(item.delta) }}</em>
               </div>
             </div>
@@ -368,7 +434,7 @@ function openNavigation() {
             <section class="business-overview">
               <div class="business-process">
                 <template v-for="(step, index) in businessSteps" :key="step.code">
-                  <button type="button" class="business-step is-detailed" :class="'is-' + step.tone" @click="open(step.path)">
+                  <button type="button" class="business-step is-detailed" :class="'is-' + step.tone" :style="{ '--process-index': index }" @click="open(step.path)">
                     <header class="business-card-head">
                       <span>{{ step.code }}</span><strong>{{ step.label }}</strong>
                       <em :class="'is-' + step.statusTone">{{ step.status }}</em>
@@ -379,7 +445,7 @@ function openNavigation() {
                     </div>
                     <div class="business-mini-chart">
                       <span>{{ step.trendLabel }}（近7日）</span>
-                      <TrendChart :rows="step.trendRows" :series="step.trendSeries" :height="64" :show-legend="false" compact draw-animation />
+                      <TrendChart :key="step.code + '-' + refreshVersion" :rows="step.trendRows" :series="step.trendSeries" :height="64" :show-legend="false" compact draw-animation />
                       <small><i>{{ step.trendRows[0].date.slice(5).replace('-', '/') }}</i><i>{{ step.trendRows.at(-1).date.slice(5).replace('-', '/') }}</i></small>
                     </div>
                     <div class="business-stat-grid">
@@ -391,7 +457,7 @@ function openNavigation() {
                     </div>
                     <b>{{ step.detailLabel }} <ChevronRight :size="12" /></b>
                   </button>
-                  <ChevronRight v-if="index < businessSteps.length - 1" class="business-connector" :size="22" />
+                  <ChevronRight v-if="index < businessSteps.length - 1" class="business-connector" :style="{ '--process-index': index }" :size="22" />
                 </template>
               </div>
             </section>
@@ -433,7 +499,7 @@ function openNavigation() {
         <aside class="board-column verified-right">
           <article class="blue-panel source-kpi-card" @click="open('/performance')">
             <header class="panel-heading"><div><span>04</span><h2>KPI 目标达成</h2></div><small>月度均值 / 最新快照</small></header>
-            <div class="source-kpi-list">
+            <div :key="'kpi-' + refreshVersion" class="source-kpi-list">
               <div v-for="kpi in kpis" :key="kpi.name">
                 <ShieldCheck :size="15" /><span>{{ kpi.name }}</span>
                 <div><i :class="{ warning: !kpi.achieved }" :style="{ width: kpi.progress + '%' }" /></div>
@@ -445,14 +511,14 @@ function openNavigation() {
 
           <article class="blue-panel source-exception-card" @click="open('/exceptions')">
             <header class="panel-heading"><div><span>05</span><h2>异常闭环概览</h2></div><small>共 {{ alerts.length }} 条</small></header>
-            <div class="exception-summary is-five">
-              <div><span>异常总数</span><strong>{{ alerts.length }}</strong><small>条</small></div>
-              <div><span>已关闭</span><strong>{{ closedAlerts.length }}</strong><small>条</small></div>
-              <div><span>未关闭</span><strong>{{ openAlerts.length }}</strong><small>条</small></div>
-              <div><span>关闭率</span><strong>{{ formatPercent(closeRate, 0) }}</strong></div>
-              <div><span>超 SLA</span><strong>{{ alerts.filter((item) => item.slaBreached).length }}</strong><small>条</small></div>
+            <div :key="'exception-' + refreshVersion" class="exception-summary is-five">
+              <div><span>异常总数</span><strong v-count-up="alerts.length">{{ alerts.length }}</strong><small>条</small></div>
+              <div><span>已关闭</span><strong v-count-up="closedAlerts.length">{{ closedAlerts.length }}</strong><small>条</small></div>
+              <div :class="{ 'has-open-alerts': openAlerts.length > 0 }"><span>未关闭</span><strong v-count-up="openAlerts.length">{{ openAlerts.length }}</strong><small>条</small></div>
+              <div class="is-complete"><span>关闭率</span><strong v-count-up="formatPercent(closeRate, 0)">{{ formatPercent(closeRate, 0) }}</strong></div>
+              <div><span>超 SLA</span><strong v-count-up="alerts.filter((item) => item.slaBreached).length">{{ alerts.filter((item) => item.slaBreached).length }}</strong><small>条</small></div>
             </div>
-            <div class="source-type-list">
+            <div :key="'types-' + refreshVersion" class="source-type-list">
               <div v-for="item in typeGroups" :key="item.label"><span>{{ item.label }}</span><i><em :style="{ width: item.value / alerts.length * 100 + '%' }" /></i><strong>{{ item.value }} 条</strong></div>
             </div>
           </article>
