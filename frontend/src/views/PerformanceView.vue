@@ -53,7 +53,7 @@ function display(value, target) {
         <MetricCard label="异常关闭率" :value="formatPercent(summary.exceptionCloseRate)" note="目标 90.0%" tone="violet"><template #icon><CheckCircle2 :size="18" /></template></MetricCard>
       </section>
       <section class="detail-grid wide-left">
-        <PanelCard title="服务水平趋势" subtitle="日度表现，百分比口径" eyebrow="QUALITY TREND"><TrendChart :rows="rows" :series="series" :height="350" /></PanelCard>
+        <PanelCard title="服务水平趋势" subtitle="日度表现，百分比口径" eyebrow="QUALITY TREND"><TrendChart :rows="rows" :series="series" :height="350" :y-min="90" :y-max="100" /></PanelCard>
         <PanelCard title="目标达成矩阵" subtitle="来源、定义与达标状态" eyebrow="TARGET MATRIX">
           <div class="target-list">
             <div v-for="target in snapshot?.targets || []" :key="target.key" class="target-row">
