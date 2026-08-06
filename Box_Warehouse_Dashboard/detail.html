@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>INTCO Warehouse</title>
+  <style>
+    :root{color-scheme:dark;background:#061113;color:#edf6f2;font-family:"Segoe UI","Microsoft YaHei",sans-serif}
+    body{display:grid;min-height:100vh;margin:0;place-items:center;background:#061113}
+    p{color:#90a7a2;font-size:14px}
+  </style>
+</head>
+<body>
+  <p>正在打开原 Vue 详情页…</p>
+  <script>
+    const view = new URLSearchParams(location.search).get('view') || 'inventory';
+    const routes = { inbound:'/operations', outbound:'/operations', inventory:'/zones/PK-P01', monthly:'/zones/PK-P01', exceptions:'/exceptions' };
+    const route = routes[view] || routes.inventory;
+    const target = location.port === '5173' ? route : `http://${location.hostname || '127.0.0.1'}:5173${route}`;
+    location.replace(target);
+  </script>
+</body>
+</html>

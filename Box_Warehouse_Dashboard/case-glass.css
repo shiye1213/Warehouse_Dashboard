@@ -1,0 +1,62 @@
+/* Glass material adapted from the user's reference: top-lit, transparent and softly shadowed. */
+.glass {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.035) 42%, transparent 76%),
+    rgba(12, 27, 47, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  box-shadow:
+    0 25px 25px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.13);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.glass::before {
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.44), transparent);
+  opacity: 0.5;
+}
+
+.glass::after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 40px;
+  border-radius: 0 0 17px 17px;
+  background: rgba(255, 255, 255, 0.045);
+  pointer-events: none;
+}
+
+.top::after { border-radius: 0 0 18px 18px; }
+.hero::after { background: linear-gradient(90deg, rgba(255,255,255,.055), rgba(255,255,255,.018)); }
+
+.glass-strong {
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.17), rgba(255,255,255,.035) 50%, transparent),
+    rgba(6, 18, 34, 0.28);
+  border: 1px solid rgba(255,255,255,.14);
+  box-shadow: 0 25px 25px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.13);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.metric-box,
+.task-pane {
+  background: linear-gradient(rgba(255,255,255,.12), transparent), rgba(11,27,47,.12);
+  border-color: rgba(255,255,255,.1);
+  box-shadow: 0 16px 20px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.09);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.panel-head,
+.task-title,
+.task-pane th,
+.order-table th {
+  background: rgba(255,255,255,.045);
+}
+
+.scene { opacity: .4; filter: blur(5px) saturate(1.02) brightness(.72); }
+.orb { opacity: .56; filter: blur(92px); }

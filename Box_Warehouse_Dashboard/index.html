@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>箱盒库运营信息看板</title>
+  <link rel="stylesheet" href="./v2.css" />
+  <link rel="stylesheet" href="./case-glass.css" />
+  <link rel="stylesheet" href="./paper-tone.css" />
+  <link rel="stylesheet" href="./leather-tone.css" />
+</head>
+<body>
+  <div class="screen">
+    <main class="wallboard" id="wallboard">
+      <div class="scene" aria-hidden="true"></div>
+      <div class="orb orb-a" aria-hidden="true"></div><div class="orb orb-b" aria-hidden="true"></div>
+      <header class="top glass">
+        <div class="warehouse-chip"><svg class="cube-icon" viewBox="0 0 36 36" aria-hidden="true">
+          <defs>
+            <linearGradient id="box-face-top" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff8e6"/><stop offset="1" stop-color="#f0cd88"/></linearGradient>
+            <linearGradient id="box-face-left" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#edcd89"/><stop offset="1" stop-color="#c89a55"/></linearGradient>
+            <linearGradient id="box-face-right" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#d0a35e"/><stop offset="1" stop-color="#a06e38"/></linearGradient>
+            <filter id="box-shadow-blur" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="1.5"/></filter>
+          </defs>
+          <ellipse cx="18" cy="34.5" rx="10.5" ry="2.2" fill="#0b0502" opacity=".4" filter="url(#box-shadow-blur)"/>
+          <path d="M30 14 L18 22 L18 34 L30 26 Z" fill="url(#box-face-right)"/>
+          <path d="M6 14 L18 22 L18 34 L6 26 Z" fill="url(#box-face-left)"/>
+          <path d="M18 6 L30 14 L18 22 L6 14 Z" fill="url(#box-face-top)"/>
+          <path d="M10 18.7 L10 28.7 M14 21.3 L14 31.3" stroke="rgba(60,32,8,.4)" stroke-width="1" stroke-linecap="round" opacity=".55"/>
+          <path d="M6 16 L18 24 L30 16" fill="none" stroke="rgba(60,32,8,.4)" stroke-width="1.6" stroke-linecap="round" opacity=".55"/>
+          <path d="M6 14 L18 6 L30 14" fill="none" stroke="#fffdf5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity=".95"/>
+          <path d="M6 14 L18 22 L30 14" fill="none" stroke="#fffdf5" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" opacity=".5"/>
+        </svg><div><small>仓库编码</small><b>WH-PK04</b></div></div>
+        <div class="headline"><span>箱盒库 · 运营驾驶舱</span><h1>箱盒库运营信息看板</h1></div>
+        <div class="top-status"><span class="online"><i></i>数据已同步</span><b id="clock">2026-07-31 23:59:59</b><small>负责人 · 孙工</small></div>
+      </header>
+
+      <section class="board-grid">
+        <aside class="left-column">
+          <section class="panel glass flow-card">
+            <div class="panel-head"><div><small>近30天 · 作业量</small><h2>近30天出入库</h2></div><span class="pill good">平稳</span></div>
+            <div class="dual-metrics">
+              <div class="metric-box"><span>累计入库</span><strong>100,835</strong><small>个 · 589 单</small><em>+11.3%</em></div>
+              <div class="metric-box"><span>累计出库</span><strong>89,525</strong><small>个 · 557 单</small><em class="amber">+8.7%</em></div>
+            </div>
+            <div class="chart-title"><b>每日箱盒流量</b><span><i class="cyan"></i>入库 <i class="purple"></i>出库</span></div>
+            <svg class="chart" viewBox="0 0 400 135" role="img" aria-label="近30天箱盒出入库趋势"><g class="chart-3d-grid" aria-hidden="true"><path d="M18 120 L30 110 H390"/><path d="M18 88 L30 78 H390"/><path d="M18 56 L30 46 H390"/><path d="M18 24 L30 14 H390"/><path d="M18 120 L30 110 M111 120 L123 110 M204 120 L216 110 M297 120 L309 110 M390 120 L402 110"/></g>
+              <defs><linearGradient id="area30" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#73ddff" stop-opacity=".3"/><stop offset="1" stop-color="#73ddff" stop-opacity="0"/></linearGradient></defs>
+              <g class="gridlines"><path d="M18 18H390M18 50H390M18 82H390M18 114H390"/></g><g class="axis"><path d="M18 18V120M18 120H390"/><text x="16" text-anchor="end" y="21">6k</text><text x="16" text-anchor="end" y="53">4k</text><text x="16" text-anchor="end" y="85">2k</text><text x="16" text-anchor="end" y="121">0</text><text x="18" y="133" dy="5">07-01</text><text x="109" y="133" dy="5">07-08</text><text x="200" y="133" dy="5">07-15</text><text x="291" y="133" dy="5">07-22</text><text x="365" y="133" dy="5">07-31</text></g>
+              <path class="area" fill="url(#area30)" d="M18 93L31 62L44 86L57 55L70 78L83 69L96 43L109 71L122 58L135 75L148 49L161 85L174 73L187 69L200 91L213 67L226 63L239 81L252 45L265 89L278 84L291 68L304 64L317 51L330 58L343 31L356 72L369 46L382 74L390 48V120H18Z"/>
+              <polyline class="line cyan-line" points="18,93 31,62 44,86 57,55 70,78 83,69 96,43 109,71 122,58 135,75 148,49 161,85 174,73 187,69 200,91 213,67 226,63 239,81 252,45 265,89 278,84 291,68 304,64 317,51 330,58 343,31 356,72 369,46 382,74 390,48"/>
+              <polyline class="line purple-line" points="18,101 31,73 44,94 57,64 70,89 83,80 96,56 109,79 122,69 135,84 148,61 161,95 174,83 187,76 200,99 213,77 226,73 239,90 252,57 265,97 278,92 291,79 304,72 317,63 330,70 343,44 356,82 369,58 382,83 390,61"/>
+            </svg>
+          </section>
+
+          <section class="panel glass stock-card">
+            <div class="panel-head"><div><small>每日库存</small><h2>近30天库存</h2></div><span class="mini-stat">净增 <b>+11,310</b></span></div>
+            <div class="stock-number"><span>当前结存</span><strong>381,310</strong><small>个</small></div>
+            <svg class="chart stock-chart" viewBox="0 0 400 118" role="img" aria-label="近30天库存趋势"><g class="chart-3d-grid" aria-hidden="true"><path d="M18 120 L30 110 H390"/><path d="M18 88 L30 78 H390"/><path d="M18 56 L30 46 H390"/><path d="M18 24 L30 14 H390"/><path d="M18 120 L30 110 M111 120 L123 110 M204 120 L216 110 M297 120 L309 110 M390 120 L402 110"/></g><g class="axis"><path d="M18 18V110M18 110H390"/><text x="16" text-anchor="end" y="21">400k</text><text x="16" text-anchor="end" y="44">300k</text><text x="16" text-anchor="end" y="67">200k</text><text x="16" text-anchor="end" y="90">100k</text><text x="16" text-anchor="end" y="112">0</text><text x="18" y="117" dy="5">07-01</text><text x="109" y="117" dy="5">07-08</text><text x="200" y="117" dy="5">07-15</text><text x="291" y="117" dy="5">07-22</text><text x="365" y="117" dy="5">07-31</text></g>
+              <defs><linearGradient id="stockFill" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#7de8cf" stop-opacity=".3"/><stop offset="1" stop-color="#7de8cf" stop-opacity="0"/></linearGradient></defs>
+              <path fill="url(#stockFill)" d="M18 82L47 76L76 78L105 69L134 72L163 60L192 64L221 48L250 53L279 41L308 46L337 32L366 37L390 24V110H18Z"/>
+              <polyline class="line mint-line" points="18,82 47,76 76,78 105,69 134,72 163,60 192,64 221,48 250,53 279,41 308,46 337,32 366,37 390,24"/>
+            </svg>
+          </section>
+
+          <section class="panel glass analysis-card">
+            <div class="panel-head"><div><small>库容与库存</small><h2>库容与库存分析</h2></div><span class="pill warn">高负荷</span></div>
+            <div class="analysis-grid">
+              <div class="ring-wrap"><div class="ring-3d" role="img" aria-label="库位占用 88.0%">
+  <svg viewBox="0 0 200 200" aria-hidden="true">
+    <g class="ring-depth" transform="translate(0 11)">
+      <path class="ring-depth-occupied" d="M100 28 A72 72 0 1 1 50.713 47.514 L71.249 69.383 A42 42 0 1 0 100 58 Z"/>
+      <path class="ring-depth-free" d="M50.713 47.514 A72 72 0 0 1 100 28 L100 58 A42 42 0 0 0 71.249 69.383 Z"/>
+    </g>
+    <path class="ring-face-occupied" d="M100 28 A72 72 0 1 1 50.713 47.514 L71.249 69.383 A42 42 0 1 0 100 58 Z"/>
+    <path class="ring-face-free" d="M50.713 47.514 A72 72 0 0 1 100 28 L100 58 A42 42 0 0 0 71.249 69.383 Z"/>
+    <path class="ring-highlight" d="M100 31 A69 69 0 0 1 57 51"/>
+  </svg>
+  <div class="ring-label"><b>88.0%</b><span>库位占用</span></div>
+</div><p><i></i>已用 844 <i class="free"></i>可用 116</p></div>
+              <div class="age-bars"><div><span>外箱库存</span><b>120,904<em>31.7%</em></b></div><div class="hbar"><i style="width:31.7%"></i></div><div><span>内盒库存</span><b>260,406<em>68.3%</em></b></div><div class="hbar purplebar"><i style="width:68.3%"></i></div><div class="age-note"><span>冻结数量</span><b>120 个</b></div></div>
+            </div>
+          </section>
+        </aside>
+
+        <section class="center-column">
+          <section class="hero panel glass">
+            <div class="hero-image" role="img" aria-label="箱盒仓库货架与纸箱"></div>
+            <div class="hero-vignette"></div>
+            <div class="hero-title"><small>箱盒仓库</small><h2>箱盒仓储<span>全景作业中心</span></h2><p>外箱、内盒、待检区与拣货任务实时联动</p></div>
+            <div class="hero-tags"><span><i class="tag-ico"></i>智能调度</span><span><i class="tag-ico"></i>库容优化</span><span><i class="tag-ico"></i>精准追溯</span><span><i class="tag-ico"></i>高效协同</span></div>
+            <div class="hero-badges"><span><i></i>2 个库区</span><span><i></i>12 个物料</span><span><i></i>设备在线</span></div>
+            <div class="hero-kpis glass-strong">
+              <div class="hero-kpi"><i class="kpi-icon"><svg viewBox="0 0 20 20"><path d="M10 2 L17 6 L10 10 L3 6 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3 6 V13 L10 17 L17 13 V6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 10 V17" stroke="currentColor" stroke-width="1.6"/></svg></i><div class="kpi-main"><span>今日入库</span><strong>4,095<small>个</small></strong><em>较昨日 ↑18.6%</em></div></div>
+              <div class="hero-kpi"><i class="kpi-icon"><svg viewBox="0 0 20 20"><path d="M1 5 h11 v8 h-11 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 8 h4 l3 3 v2 h-7 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="6" cy="15" r="1.5" fill="currentColor"/><circle cx="14" cy="15" r="1.5" fill="currentColor"/></svg></i><div class="kpi-main"><span>今日出库</span><strong>3,904<small>个</small></strong><em>较昨日 ↑15.2%</em></div></div>
+              <div class="hero-kpi"><i class="kpi-icon"><svg viewBox="0 0 20 20"><path d="M10 1 L17 5 L10 9 L3 5 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 8.5 L17 12.5 L10 16.5 L3 12.5 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M3 5 V12.5 M17 5 V12.5" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg></i><div class="kpi-main"><span>库存结存</span><strong>381,310<small>个</small></strong><em>较昨日 ↑1.2%</em></div></div>
+              <div class="hero-kpi"><i class="kpi-icon"><svg viewBox="0 0 20 20"><path d="M2 5 h16 M2 10 h16 M2 15 h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M2 5 v10 M18 5 v10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></i><div class="kpi-main"><span>总库位</span><strong>960<small>个</small></strong></div></div>
+              <div class="hero-kpi"><i class="kpi-icon"><svg viewBox="0 0 20 20"><rect x="3" y="3" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M7 10 l2.5 2.5 L13.5 7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></i><div class="kpi-main"><span>已使用</span><strong>844<small>个</small></strong><em>较昨日 ↑0.9%</em></div></div>
+              <div class="hero-kpi"><i class="kpi-icon"><svg viewBox="0 0 20 20"><path d="M10 2.5 L18 17 H2 Z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M10 8 v4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="10" cy="14.5" r=".9" fill="currentColor"/></svg></i><div class="kpi-main"><span>今日异常</span><strong class="warn-number">2<small>条</small></strong><em class="down">较昨日 ↓1 条</em></div></div>
+            </div>
+          </section>
+
+          <section class="panel glass operation-card">
+            <div class="panel-head"><div><small>今日作业</small><h2>今日作业</h2></div><div class="ops-summary"><span>拣货 <b>29</b></span><span>叉车 <b>50</b></span><span>及时率 <b>93.08%</b></span></div></div>
+            <div class="operation-grid">
+              <div class="task-pane"><div class="task-title"><span class="task-icon in-icon">入</span><b>入库任务</b><em>23 单</em></div><table><thead><tr><th>项目号</th><th>物料</th><th>计划</th><th>完成</th><th>状态</th></tr></thead><tbody><tr><td>YL-26070101</td><td>丁腈外箱</td><td>720</td><td>720</td><td><span class="state done">完成</span></td></tr><tr><td>YL-26070102</td><td>PVC内盒</td><td>1,160</td><td>1,160</td><td><span class="state done">完成</span></td></tr><tr><td>YL-26070201</td><td>丁腈内盒</td><td>1,480</td><td>1,260</td><td><span class="state doing">上架中</span></td></tr><tr><td>YL-26070103</td><td>PE外箱</td><td>735</td><td>620</td><td><span class="state waiting">待检</span></td></tr></tbody></table></div>
+              <div class="task-pane"><div class="task-title"><span class="task-icon out-icon">出</span><b>出库任务</b><em>21 单</em></div><table><thead><tr><th>项目号</th><th>物料</th><th>需求</th><th>已拣</th><th>状态</th></tr></thead><tbody><tr><td>YL-26070102</td><td>PVC外箱</td><td>650</td><td>650</td><td><span class="state done">完成</span></td></tr><tr><td>YL-26070201</td><td>丁腈内盒</td><td>1,420</td><td>1,420</td><td><span class="state done">完成</span></td></tr><tr><td>YL-26070101</td><td>丁腈外箱</td><td>710</td><td>568</td><td><span class="state doing">拣货中</span></td></tr><tr><td>YL-26070103</td><td>PE内盒</td><td>1,124</td><td>912</td><td><span class="state waiting">待复核</span></td></tr></tbody></table></div>
+            </div>
+          </section>
+        </section>
+
+        <aside class="right-column">
+          <section class="panel glass flow-card">
+            <div class="panel-head"><div><small>近12个月 · 作业量</small><h2>近12个月出入库</h2></div><span class="pill good">同比 +6.8%</span></div>
+            <div class="dual-metrics"><div class="metric-box"><span>累计入库</span><strong>1.21M</strong><small>个</small><em>+6.8%</em></div><div class="metric-box"><span>累计出库</span><strong>1.08M</strong><small>个</small><em class="amber">+5.4%</em></div></div>
+            <div class="chart-title"><b>月度流量走势</b><span><i class="cyan"></i>入库 <i class="purple"></i>出库</span></div>
+            <svg class="chart" viewBox="0 0 400 135" role="img" aria-label="近12个月箱盒出入库趋势"><defs><linearGradient id="monthlyFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c8a563" stop-opacity=".34"/><stop offset="1" stop-color="#c8a563" stop-opacity=".03"/></linearGradient></defs><path class="monthly-area" fill="url(#monthlyFill)" d="M18 92L52 84L86 88L120 70L154 77L188 55L222 62L256 42L290 51L324 31L358 44L390 27V120H18Z"/><g class="chart-3d-grid" aria-hidden="true"><path d="M18 120 L30 110 H390"/><path d="M18 88 L30 78 H390"/><path d="M18 56 L30 46 H390"/><path d="M18 24 L30 14 H390"/><path d="M18 120 L30 110 M111 120 L123 110 M204 120 L216 110 M297 120 L309 110 M390 120 L402 110"/></g><g class="gridlines"><g class="axis"><path d="M18 18V120M18 120H390"/><text x="16" text-anchor="end" y="21">120k</text><text x="16" text-anchor="end" y="53">80k</text><text x="16" text-anchor="end" y="85">40k</text><text x="16" text-anchor="end" y="121">0</text><text x="18" y="133" dy="5">08月</text><text x="109" y="133" dy="5">11月</text><text x="200" y="133" dy="5">02月</text><text x="291" y="133" dy="5">05月</text><text x="365" y="133" dy="5">07月</text></g><path d="M18 18H390M18 50H390M18 82H390M18 114H390"/></g><polyline class="line cyan-line" points="18,92 52,84 86,88 120,70 154,77 188,55 222,62 256,42 290,51 324,31 358,44 390,27"/><polyline class="line purple-line" points="18,101 52,94 86,96 120,82 154,87 188,68 222,74 256,55 290,62 324,44 358,56 390,39"/></svg>
+          </section>
+
+          <section class="panel glass stock-card">
+            <div class="panel-head"><div><small>月末库存</small><h2>近12个月库存</h2></div><span class="mini-stat">周转 <b>18.6<small>天</small></b></span></div>
+            <div class="stock-number"><span>月末库存</span><strong>381,310</strong><small>个</small></div>
+            <svg class="chart stock-chart" viewBox="0 0 400 118" role="img" aria-label="近12个月库存趋势"><g class="chart-3d-grid" aria-hidden="true"><path d="M18 120 L30 110 H390"/><path d="M18 88 L30 78 H390"/><path d="M18 56 L30 46 H390"/><path d="M18 24 L30 14 H390"/><path d="M18 120 L30 110 M111 120 L123 110 M204 120 L216 110 M297 120 L309 110 M390 120 L402 110"/></g><g class="axis"><path d="M18 18V110M18 110H390"/><text x="16" text-anchor="end" y="21">400k</text><text x="16" text-anchor="end" y="44">300k</text><text x="16" text-anchor="end" y="67">200k</text><text x="16" text-anchor="end" y="90">100k</text><text x="16" text-anchor="end" y="112">0</text><text x="18" y="117" dy="5">08月</text><text x="109" y="117" dy="5">11月</text><text x="200" y="117" dy="5">02月</text><text x="291" y="117" dy="5">05月</text><text x="365" y="117" dy="5">07月</text></g><path fill="url(#stockFill)" d="M18 90L52 84L86 88L120 77L154 70L188 66L222 58L256 51L290 46L324 36L358 29L390 22V110H18Z"/><polyline class="line mint-line" points="18,90 52,84 86,88 120,77 154,70 188,66 222,58 256,51 290,46 324,36 358,29 390,22"/></svg>
+          </section>
+
+          <section class="panel glass order-card">
+            <div class="panel-head"><div><small>异常与完货</small><h2>完货与异常</h2></div><span class="pill danger">5 条未关闭</span></div>
+            <div class="order-roller" role="list" aria-label="完货与异常滚动列表">
+  <div class="order-roller-track">
+    <div class="order-row order-row--active" role="listitem"><span class="order-row__code">EX2607288</span><span class="order-row__item">库位异常<small>箱盒待检区</small></span><span class="state done">已关闭</span><time>54m</time></div>
+    <div class="order-row" role="listitem"><span class="order-row__code">EX2607310</span><span class="order-row__item">库位异常<small>箱盒主库</small></span><span class="state doing">处理中</span><time>48m</time></div>
+    <div class="order-row order-row--active" role="listitem"><span class="order-row__code">EX2607306</span><span class="order-row__item">PDA扫码失败<small>箱盒待检区</small></span><span class="state waiting">未处理</span><time>36m</time></div>
+    <div class="order-row" role="listitem"><span class="order-row__code">EX2607294</span><span class="order-row__item">出库延迟<small>YL-26070103</small></span><span class="state done">已关闭</span><time>71m</time></div>
+    <div class="order-row" role="listitem"><span class="order-row__code">EX2607310</span><span class="order-row__item">库位异常<small>箱盒主库</small></span><span class="state doing">处理中</span><time>48m</time></div>
+    <div class="order-row order-row--edge" role="listitem"><span class="order-row__code">EX2607306</span><span class="order-row__item">PDA扫码失败<small>箱盒待检区</small></span><span class="state waiting">未处理</span><time>36m</time></div>
+  </div>
+</div>
+          </section>
+        </aside>
+      </section>
+    </main>
+  </div>
+  <script src="./v2.js?rev=axis4"></script>
+</body>
+</html>

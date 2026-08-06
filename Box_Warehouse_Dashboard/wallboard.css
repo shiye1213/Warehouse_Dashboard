@@ -1,0 +1,70 @@
+/* Wallboard mode: the reference dashboard keeps the full operating picture in one 1920x1080 viewport. */
+@media (min-width: 1400px) and (min-height: 820px) {
+  html, body { height: 100%; overflow: hidden; }
+  .app-shell { width: 100%; height: 100vh; max-width: none; display: grid; grid-template-rows: 66px 38px 258px 68px minmax(0, 1fr) 14px; gap: 8px; padding: 12px 18px 8px; }
+  .topbar { min-height: 0; height: 66px; padding: 11px 18px; border-radius: 18px; }
+  .toolbar { min-height: 0; height: 38px; padding: 0 2px; }
+  .hero-grid { min-height: 0; height: 258px; gap: 10px; }
+  .hero-stage, .side-stack { min-height: 0; height: 258px; }
+  .side-stack { padding: 14px 16px; border-radius: 16px; }
+  .big-metric { margin-top: 17px; }
+  .big-metric strong { font-size: 29px; }
+  .metric-divider { margin-top: 14px; }
+  .radial-card { margin-top: 16px; grid-template-columns: 72px 1fr; gap: 10px; }
+  .radial { width: 68px; height: 68px; }
+  .radial::after { inset: 7px; }
+  .radial span { font-size: 19px; }
+  .mini-list { gap: 7px; margin-top: 14px; }
+  .mini-list > div { padding-bottom: 7px; }
+  .hero-stage { border-radius: 16px; }
+  .stage-backdrop { opacity: .72; filter: saturate(1.1) contrast(1.02) brightness(1.22); }
+  .stage-shade { background: linear-gradient(90deg, rgba(7,17,31,.79) 0%, rgba(7,17,31,.34) 37%, rgba(7,17,31,.07) 74%, rgba(7,17,31,.52) 100%), linear-gradient(0deg, rgba(7,17,31,.78), transparent 52%, rgba(7,17,31,.1)); }
+  .stage-copy { padding: 22px 27px; }
+  .stage-copy h2 { margin-top: 7px; font-size: 40px; }
+  .stage-copy p { margin-top: 8px; font-size: 10px; }
+  .stage-micro { top: 19px; right: 21px; }
+  .hero-metrics { right: 15px; bottom: 14px; left: 15px; border-radius: 12px; }
+  .hero-metrics > div { padding: 10px 14px; }
+  .hero-metrics strong { margin-top: 3px; font-size: 22px; }
+  .kpi-strip { min-height: 0; height: 68px; gap: 9px; margin-top: 0; }
+  .kpi-card { min-height: 0; height: 68px; padding: 10px 13px; border-radius: 14px; }
+  .kpi-icon { width: 28px; height: 28px; flex-basis: 28px; border-radius: 8px; }
+  .kpi-card strong { margin-top: 3px; font-size: 17px; }
+  .kpi-card small { margin-top: 2px; font-size: 8px; }
+  .dashboard-grid { min-height: 0; height: 100%; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); gap: 9px; margin-top: 0; }
+  .panel { border-radius: 15px; min-height: 0; }
+  .panel-header { min-height: 42px; padding: 9px 13px 7px; }
+  .panel-header h3 { margin-top: 2px; font-size: 13px; }
+  .chart-meta { padding: 8px 13px 0; }
+  .chart-meta strong { font-size: 18px; }
+  .line-chart { height: calc(100% - 82px); min-height: 95px; margin: 0 12px; }
+  .axis-labels { padding: 1px 13px 9px; }
+  .capacity-score { padding: 10px 13px 3px; }
+  .capacity-score strong { font-size: 24px; }
+  .zone-bars { gap: 9px; padding: 5px 13px 0; }
+  .capacity-foot { margin: 12px 13px 0; padding-top: 8px; }
+  .inventory-body { grid-template-columns: 112px 1fr; gap: 10px; padding: 9px 13px 6px; }
+  .donut { width: 104px; height: 104px; }
+  .donut::after { inset: 12px; }
+  .inventory-note { margin: 0 13px 9px; padding-top: 8px; }
+  .timeline { padding: 10px 13px 8px; }
+  .timeline-item { padding-bottom: 10px; }
+  .exception-table-wrap { max-height: calc(100% - 89px); }
+  .exception-panel th { padding: 7px 8px; }
+  .exception-panel td { padding: 7px 8px; }
+  .table-foot { margin: 3px 13px 8px; padding-top: 7px; }
+  .footer-bar { margin-top: 0; }
+  .glass-panel { background: linear-gradient(135deg, rgba(255,255,255,.14), rgba(97,159,228,.1) 38%, rgba(8,22,41,.28) 80%), rgba(13,29,52,.42); border-color: rgba(221,238,255,.26); box-shadow: 0 12px 36px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.16), inset 0 -1px 0 rgba(112,177,239,.12); }
+}
+
+@media (max-width: 1399px) and (min-width: 900px) {
+  .glass-panel { background: linear-gradient(135deg, rgba(255,255,255,.1), rgba(97,159,228,.07) 38%, rgba(8,22,41,.3) 80%), rgba(13,29,52,.48); border-color: rgba(221,238,255,.23); }
+}
+
+/* Apple glass clarity pass */
+@media (min-width: 1400px) and (min-height: 820px) {
+  body::before { content: ""; position: fixed; inset: 0; z-index: -3; pointer-events: none; background: radial-gradient(circle at 18% 23%, rgba(55, 159, 236, .24), transparent 31%), radial-gradient(circle at 76% 16%, rgba(139, 105, 236, .2), transparent 28%), radial-gradient(circle at 55% 88%, rgba(37, 190, 198, .13), transparent 32%); }
+  .ambient { opacity: .36; filter: blur(108px); }
+  .glass-panel { background: linear-gradient(135deg, rgba(255,255,255,.18) 0%, rgba(123,182,239,.09) 32%, rgba(8,22,41,.18) 76%), rgba(16,34,58,.25); border: 1px solid rgba(225,241,255,.31); box-shadow: 0 18px 48px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.28), inset 1px 0 0 rgba(255,255,255,.08), inset 0 -1px 0 rgba(93,172,235,.12); backdrop-filter: blur(30px) saturate(175%) brightness(1.08); -webkit-backdrop-filter: blur(30px) saturate(175%) brightness(1.08); }
+  .hero-metrics, .select-wrap, .segmented { background: linear-gradient(135deg, rgba(255,255,255,.14), rgba(38,73,112,.18)), rgba(8,22,40,.34); border-color: rgba(225,241,255,.24); backdrop-filter: blur(24px) saturate(160%); -webkit-backdrop-filter: blur(24px) saturate(160%); box-shadow: inset 0 1px 0 rgba(255,255,255,.16); }
+}
