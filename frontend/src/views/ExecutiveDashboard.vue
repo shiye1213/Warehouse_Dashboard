@@ -47,6 +47,31 @@ async function loadFinishedGoods() {
   if (daily.length) Object.assign(latest, daily.at(-1))
 }
 
+async function triggerRefresh(initial = false) {
+  if (refreshing.value) return
+
+  window.clearTimeout(refreshTimer)
+  window.clearTimeout(updatedTimer)
+  refreshing.value = true
+  showUpdated.value = false
+
+  try {
+    await loadFinishedGoods()
+    refreshVersion.value += 1
+    animateZoneOccupancy()
+    startAlertCarousel()
+
+    if (!initial) {
+      showUpdated.value = true
+      updatedTimer = window.setTimeout(() => { showUpdated.value = false }, 2200)
+    }
+  } catch (error) {
+    console.error('加载成品库看板失败', error)
+  } finally {
+    refreshTimer = window.setTimeout(() => { refreshing.value = false }, initial ? 0 : 520)
+  }
+}
+
 const trendSeries = [
   { name: '成品入库量', key: 'inbound', color: '#28c8ff', area: true },
   { name: '成品出库量', key: 'outbound', color: '#c5d8ff', symbol: 'diamond' },
@@ -346,17 +371,6 @@ function rotateAlerts(direction) {
 function selectAlert(index) {
   activeAlertIndex.value = index
   startAlertCarousel()
-}
-
-onMounted(() => {
-  loadFinishedGoods().then(() => {
-    animateZoneOccupancy()
-    startAlertCarousel()
-  }).catch(() => {})
-  animateZoneOccupancy()
-  startAlertCarousel()
-  refreshTimer = window.setTimeout(() => { refreshing.value = false }, 720)
-  updatedTimer = window.setTimeout(() => { showUpdated.value = false }, 2200)
 }
 
 onMounted(() => triggerRefresh(true))
