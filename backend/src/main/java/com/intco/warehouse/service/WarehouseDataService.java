@@ -142,6 +142,9 @@ public class WarehouseDataService {
         result.put("exceptionEvents", scalar("SELECT COUNT(*) FROM exception_event"));
         result.put("bomRelations", scalar("SELECT COUNT(*) FROM bom_relation"));
         result.put("kpiTargets", scalar("SELECT COUNT(*) FROM kpi_target"));
+        result.put("inventoryAgeRules", scalar("SELECT COUNT(*) FROM inventory_age_rule"));
+        result.put("inventoryAgeBatches", scalar("SELECT COUNT(*) FROM inventory_age_batch"));
+        result.put("inventoryAgeSkus", scalar("SELECT COUNT(*) FROM inventory_age_sku"));
         result.putAll(loadMeta(null));
         return result;
     }

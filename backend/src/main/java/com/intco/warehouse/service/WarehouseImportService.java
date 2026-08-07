@@ -40,6 +40,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class WarehouseImportService {
     private static final int MAX_IMPORT_ROWS = 10000;
+    private static final String AGE_RULE_SHEET = "\u5e93\u9f84\u89c4\u5219";
+    private static final String AGE_BATCH_SHEET = "\u5e93\u9f84\u6279\u6b21\u660e\u7ec6";
+    private static final String AGE_SKU_SHEET = "\u5e93\u9f84SKU\u6c47\u603b";
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final List<DateTimeFormatter> DATE_TIMES = Arrays.asList(
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
@@ -79,6 +82,11 @@ public class WarehouseImportService {
             importedRows += importExceptions(workbook);
             importedRows += importBom(workbook);
             importedRows += importTargets(workbook);
+            if (hasInventoryAgeSheets(workbook)) {
+                importedRows += importInventoryAgeRules(workbook);
+                importedRows += importInventoryAgeBatches(workbook);
+                importedRows += importInventoryAgeSkus(workbook);
+            }
 
             writeImportJob(importId, fileName, "FULL_WORKBOOK", importedRows, startedAt, "SUCCESS", "完整数据集已原子替换");
             LocalDate[] range = dateRange();
@@ -124,7 +132,13 @@ public class WarehouseImportService {
         String[] names = {"仓库主数据", "现存量快照", "运营_SKU日指标", "运营_仓库每日指标", "运营_库区状态", "运营_异常事件", "项目_BOM关系", "运营_KPI目标"};
         List<String> missing = new ArrayList<>();
         for (String name : names) if (workbook.getSheet(name) == null) missing.add(name);
+        for (String name : new String[]{AGE_RULE_SHEET, AGE_BATCH_SHEET, AGE_SKU_SHEET}) if (workbook.getSheet(name) == null) missing.add(name);
         if (!missing.isEmpty()) throw new IllegalArgumentException("Excel 缺少工作表：" + String.join("、", missing));
+    }
+
+    private boolean hasInventoryAgeSheets(Workbook workbook) {
+        return workbook.getSheet(AGE_RULE_SHEET) != null && workbook.getSheet(AGE_BATCH_SHEET) != null
+                && workbook.getSheet(AGE_SKU_SHEET) != null;
     }
 
     private Map<String, String> readWarehouseRoles(Workbook workbook) {
@@ -251,6 +265,72 @@ public class WarehouseImportService {
         return rows.size();
     }
 
+    private int importInventoryAgeRules(Workbook workbook) {
+        Table table = Table.open(workbook, AGE_RULE_SHEET, "rule_type");
+        List<Object[]> rows = new ArrayList<>();
+        table.forEach(row -> rows.add(new Object[]{
+                table.requiredText(row, "rule_type"), table.requiredText(row, "rule_name"),
+                table.requiredText(row, "rule_condition"), table.requiredText(row, "result_level"),
+                table.text(row, "action_guidance"), table.text(row, "applicable_scope")
+        }));
+        insertRows(rows, warehouseMapper::insertInventoryAgeRules);
+        return rows.size();
+    }
+
+    private int importInventoryAgeBatches(Workbook workbook) {
+        Table table = Table.open(workbook, AGE_BATCH_SHEET, "age_batch_id");
+        List<Object[]> rows = new ArrayList<>();
+        table.forEach(row -> rows.add(new Object[]{
+                table.sqlDate(row, "snapshot_date"), table.requiredText(row, "age_batch_id"),
+                table.requiredText(row, "warehouse_id"), table.requiredText(row, "warehouse_name"),
+                table.requiredText(row, "warehouse_type"), table.requiredText(row, "project_no"),
+                table.requiredText(row, "project_name"), table.requiredText(row, "material_code"),
+                table.requiredText(row, "material_name"), table.requiredText(row, "project_material_sku"),
+                table.requiredText(row, "material_category"), table.text(row, "color"), table.text(row, "model"),
+                table.requiredText(row, "uom"), table.requiredText(row, "batch_no"),
+                table.sqlDate(row, "receipt_date"), table.integer(row, "age_days"),
+                table.requiredText(row, "age_bucket"), table.decimal(row, "batch_on_hand_qty"),
+                table.decimal(row, "batch_reserved_qty"), table.decimal(row, "batch_frozen_qty"),
+                table.decimal(row, "available_qty"), table.nullableDecimal(row, "unit_cost"),
+                table.nullableDecimal(row, "inventory_amount"), table.nullableSqlDate(row, "last_outbound_date"),
+                table.nullableInteger(row, "days_since_last_outbound"), table.decimal(row, "outbound_qty_30d"),
+                table.nullableDecimal(row, "outbound_rate_30d"), table.nullableDecimal(row, "coverage_days"),
+                table.text(row, "movement_status"), table.requiredText(row, "stagnant_level"),
+                table.yesNo(row, "is_stagnant"), table.decimal(row, "stagnant_score"),
+                table.text(row, "priority"), table.text(row, "recommended_action"),
+                table.text(row, "owner"), table.text(row, "data_source")
+        }));
+        insertRows(rows, warehouseMapper::insertInventoryAgeBatches);
+        return rows.size();
+    }
+
+    private int importInventoryAgeSkus(Workbook workbook) {
+        Table table = Table.open(workbook, AGE_SKU_SHEET, "project_material_sku");
+        List<Object[]> rows = new ArrayList<>();
+        table.forEach(row -> rows.add(new Object[]{
+                table.sqlDate(row, "snapshot_date"), table.requiredText(row, "warehouse_id"),
+                table.requiredText(row, "warehouse_name"), table.requiredText(row, "warehouse_type"),
+                table.requiredText(row, "project_no"), table.requiredText(row, "project_name"),
+                table.requiredText(row, "material_code"), table.requiredText(row, "material_name"),
+                table.requiredText(row, "project_material_sku"), table.requiredText(row, "material_category"),
+                table.text(row, "color"), table.text(row, "model"), table.requiredText(row, "uom"),
+                table.integer(row, "batch_count"), table.decimal(row, "on_hand_qty"),
+                table.decimal(row, "available_qty"), table.nullableDecimal(row, "inventory_amount"),
+                table.nullableDecimal(row, "weighted_avg_age_days"), table.integer(row, "max_age_days"),
+                table.text(row, "dominant_age_bucket"), table.decimal(row, "outbound_qty_30d"),
+                table.nullableDecimal(row, "outbound_rate_30d"),
+                table.nullableSqlDate(row, "latest_sku_outbound_date"),
+                table.nullableInteger(row, "days_since_last_sku_outbound"),
+                table.integer(row, "stagnant_batch_count"),
+                table.nullableDecimal(row, "stagnant_inventory_amount"),
+                table.nullableDecimal(row, "stagnation_ratio"), table.requiredText(row, "stagnant_level"),
+                table.yesNo(row, "is_stagnant"), table.decimal(row, "stagnant_score"),
+                table.text(row, "priority"), table.text(row, "recommended_action"), table.text(row, "owner")
+        }));
+        insertRows(rows, warehouseMapper::insertInventoryAgeSkus);
+        return rows.size();
+    }
+
     private void insertRows(List<Object[]> rows, java.util.function.ToIntFunction<Object[]> inserter) {
         for (Object[] row : rows) inserter.applyAsInt(row);
     }
@@ -263,6 +343,9 @@ public class WarehouseImportService {
         warehouseMapper.clearInventory();
         warehouseMapper.clearBom();
         warehouseMapper.clearTargets();
+        warehouseMapper.clearInventoryAgeBatches();
+        warehouseMapper.clearInventoryAgeSkus();
+        warehouseMapper.clearInventoryAgeRules();
         warehouseMapper.clearWarehouses();
     }
 
@@ -462,6 +545,16 @@ public class WarehouseImportService {
             }
             return Date.valueOf(parseDate(formatter.formatCellValue(cell)));
         }
+        Date nullableSqlDate(Row row, String field) {
+            Cell cell = cell(row, field);
+            if (cell == null || cell.getCellType() == CellType.BLANK) return null;
+            if (cell.getCellType() == CellType.NUMERIC && DateUtil.isValidExcelDate(cell.getNumericCellValue())) {
+                return Date.valueOf(cell.getLocalDateTimeCellValue().toLocalDate());
+            }
+            String value = formatter.formatCellValue(cell).trim();
+            return value.isEmpty() || "-".equals(value) ? null : Date.valueOf(parseDate(value));
+        }
+
 
         Timestamp sqlTimestamp(Row row, String field) {
             Timestamp value = nullableTimestamp(row, field);

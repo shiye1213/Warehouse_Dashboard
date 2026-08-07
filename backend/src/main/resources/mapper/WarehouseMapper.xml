@@ -109,6 +109,16 @@
     SELECT * FROM kpi_target ORDER BY kpi_name
   </select>
 
+  <select id="exportInventoryAgeRules" resultType="map">
+    SELECT * FROM inventory_age_rule ORDER BY rule_type,rule_name
+  </select>
+  <select id="exportInventoryAgeBatches" resultType="map">
+    SELECT * FROM inventory_age_batch ORDER BY snapshot_date,warehouse_id,project_no,material_code,age_batch_id
+  </select>
+  <select id="exportInventoryAgeSkus" resultType="map">
+    SELECT * FROM inventory_age_sku ORDER BY snapshot_date,warehouse_id,project_no,material_code
+  </select>
+
   <delete id="deleteWarehouseDaily">
     DELETE FROM warehouse_daily_metric WHERE biz_date = #{bizDate} AND warehouse_id = #{warehouseId}
   </delete>
@@ -119,6 +129,9 @@
   <delete id="clearInventory">DELETE FROM inventory_snapshot</delete>
   <delete id="clearBom">DELETE FROM bom_relation</delete>
   <delete id="clearTargets">DELETE FROM kpi_target</delete>
+  <delete id="clearInventoryAgeBatches">DELETE FROM inventory_age_batch</delete>
+  <delete id="clearInventoryAgeSkus">DELETE FROM inventory_age_sku</delete>
+  <delete id="clearInventoryAgeRules">DELETE FROM inventory_age_rule</delete>
   <delete id="clearWarehouses">DELETE FROM warehouse</delete>
 
   <insert id="insertWarehouses">
@@ -203,6 +216,44 @@
     INSERT INTO kpi_target (kpi_name,target_value,unit,warning_rule,calculation_definition,data_source)
     VALUES
       (#{row[0]},#{row[1]},#{row[2]},#{row[3]},#{row[4]},#{row[5]})
+  </insert>
+
+  <insert id="insertInventoryAgeRules">
+    INSERT INTO inventory_age_rule
+      (rule_type,rule_name,rule_condition,result_level,action_guidance,applicable_scope)
+    VALUES
+      (#{row[0]},#{row[1]},#{row[2]},#{row[3]},#{row[4]},#{row[5]})
+  </insert>
+
+  <insert id="insertInventoryAgeBatches">
+    INSERT INTO inventory_age_batch
+      (snapshot_date,age_batch_id,warehouse_id,warehouse_name,warehouse_type,project_no,project_name,
+       material_code,material_name,project_material_sku,material_category,color,model,uom,batch_no,
+       receipt_date,age_days,age_bucket,batch_on_hand_qty,batch_reserved_qty,batch_frozen_qty,
+       available_qty,unit_cost,inventory_amount,last_outbound_date,days_since_last_outbound,
+       outbound_qty_30d,outbound_rate_30d,coverage_days,movement_status,stagnant_level,is_stagnant,
+       stagnant_score,priority,recommended_action,owner,data_source)
+    VALUES
+      (#{row[0]},#{row[1]},#{row[2]},#{row[3]},#{row[4]},#{row[5]},#{row[6]},#{row[7]},#{row[8]},
+       #{row[9]},#{row[10]},#{row[11]},#{row[12]},#{row[13]},#{row[14]},#{row[15]},#{row[16]},
+       #{row[17]},#{row[18]},#{row[19]},#{row[20]},#{row[21]},#{row[22]},#{row[23]},#{row[24]},
+       #{row[25]},#{row[26]},#{row[27]},#{row[28]},#{row[29]},#{row[30]},#{row[31]},#{row[32]},
+       #{row[33]},#{row[34]},#{row[35]},#{row[36]})
+  </insert>
+
+  <insert id="insertInventoryAgeSkus">
+    INSERT INTO inventory_age_sku
+      (snapshot_date,warehouse_id,warehouse_name,warehouse_type,project_no,project_name,material_code,
+       material_name,project_material_sku,material_category,color,model,uom,batch_count,on_hand_qty,
+       available_qty,inventory_amount,weighted_avg_age_days,max_age_days,dominant_age_bucket,
+       outbound_qty_30d,outbound_rate_30d,latest_sku_outbound_date,days_since_last_sku_outbound,
+       stagnant_batch_count,stagnant_inventory_amount,stagnation_ratio,stagnant_level,is_stagnant,
+       stagnant_score,priority,recommended_action,owner)
+    VALUES
+      (#{row[0]},#{row[1]},#{row[2]},#{row[3]},#{row[4]},#{row[5]},#{row[6]},#{row[7]},#{row[8]},
+       #{row[9]},#{row[10]},#{row[11]},#{row[12]},#{row[13]},#{row[14]},#{row[15]},#{row[16]},
+       #{row[17]},#{row[18]},#{row[19]},#{row[20]},#{row[21]},#{row[22]},#{row[23]},#{row[24]},
+       #{row[25]},#{row[26]},#{row[27]},#{row[28]},#{row[29]},#{row[30]},#{row[31]},#{row[32]})
   </insert>
 
   <insert id="insertImportJob">

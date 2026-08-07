@@ -27,6 +27,9 @@ public interface WarehouseMapper extends BaseMapper<WarehouseEntity> {
     List<Map<String, Object>> exportExceptions();
     List<Map<String, Object>> exportBom();
     List<Map<String, Object>> exportTargets();
+    List<Map<String, Object>> exportInventoryAgeRules();
+    List<Map<String, Object>> exportInventoryAgeBatches();
+    List<Map<String, Object>> exportInventoryAgeSkus();
 
     int deleteWarehouseDaily(@Param("bizDate") Object bizDate, @Param("warehouseId") Object warehouseId);
     int clearExceptionEvents();
@@ -36,6 +39,9 @@ public interface WarehouseMapper extends BaseMapper<WarehouseEntity> {
     int clearInventory();
     int clearBom();
     int clearTargets();
+    int clearInventoryAgeRules();
+    int clearInventoryAgeBatches();
+    int clearInventoryAgeSkus();
     int clearWarehouses();
     int insertWarehouses(@Param("row") Object[] row);
     int insertInventory(@Param("row") Object[] row);
@@ -45,6 +51,9 @@ public interface WarehouseMapper extends BaseMapper<WarehouseEntity> {
     int insertExceptions(@Param("row") Object[] row);
     int insertBom(@Param("row") Object[] row);
     int insertTargets(@Param("row") Object[] row);
+    int insertInventoryAgeRules(@Param("row") Object[] row);
+    int insertInventoryAgeBatches(@Param("row") Object[] row);
+    int insertInventoryAgeSkus(@Param("row") Object[] row);
     int insertImportJob(@Param("id") String id, @Param("fileName") String fileName, @Param("type") String type,
                         @Param("rows") int rows, @Param("startedAt") LocalDateTime startedAt,
                         @Param("finishedAt") LocalDateTime finishedAt, @Param("status") String status,

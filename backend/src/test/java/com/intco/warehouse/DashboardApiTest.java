@@ -66,9 +66,13 @@ class DashboardApiTest {
                 .andExpect(content().contentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .andReturn().getResponse().getContentAsByteArray();
         try (Workbook workbook = WorkbookFactory.create(new ByteArrayInputStream(content))) {
-            assertEquals(8, workbook.getNumberOfSheets());
+            assertEquals(11, workbook.getNumberOfSheets());
             assertNotNull(workbook.getSheet("运营_SKU日指标"));
             assertEquals(1970, workbook.getSheet("运营_SKU日指标").getLastRowNum());
+            assertNotNull(workbook.getSheet("\u5e93\u9f84\u6279\u6b21\u660e\u7ec6"));
+            assertEquals(173, workbook.getSheet("\u5e93\u9f84\u6279\u6b21\u660e\u7ec6").getLastRowNum());
+            assertNotNull(workbook.getSheet("\u5e93\u9f84SKU\u6c47\u603b"));
+            assertEquals(40, workbook.getSheet("\u5e93\u9f84SKU\u6c47\u603b").getLastRowNum());
         }
     }
 
@@ -82,8 +86,17 @@ class DashboardApiTest {
         mvc.perform(multipart("/api/data/import").file(file))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.importType").value("FULL_WORKBOOK"))
-                .andExpect(jsonPath("$.importedRows").value(2749))
+                .andExpect(jsonPath("$.importedRows").value(2968))
                 .andExpect(jsonPath("$.endDate").value("2026-07-31"));
+    }
+
+    @Test
+    void dataStatusExposesInventoryAgingCounts() throws Exception {
+        mvc.perform(get("/api/data/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.inventoryAgeRules").value(10))
+                .andExpect(jsonPath("$.inventoryAgeBatches").value(171))
+                .andExpect(jsonPath("$.inventoryAgeSkus").value(38));
     }
 
     @Test
