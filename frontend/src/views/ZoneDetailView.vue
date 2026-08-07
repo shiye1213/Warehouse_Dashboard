@@ -7,11 +7,12 @@ import PageState from '../components/PageState.vue'
 import PanelCard from '../components/PanelCard.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { formatNumber, formatPercent, useDashboard } from '../composables/useDashboard'
+import { findWarehouseMapZone } from '../data/warehouseMapZones'
 
 const route = useRoute()
 const router = useRouter()
 const { snapshot, loading, error, refresh } = useDashboard()
-const zone = computed(() => (snapshot.value?.zones || []).find((item) => item.code === route.params.code))
+const zone = computed(() => findWarehouseMapZone(route.params.code, snapshot.value?.zones || []))
 const relatedAlerts = computed(() => (snapshot.value?.alerts || []).filter((item) => item.zoneCode === route.params.code || item.zone === zone.value?.name))
 const pressure = computed(() => zone.value?.occupancy >= 0.85 ? '高' : zone.value?.occupancy >= 0.75 ? '中' : '低')
 </script>
