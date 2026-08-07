@@ -131,6 +131,18 @@ function probeLayout() {
     }
   }
 
+  const flowPanel = document.querySelector('.raw-flow-panel')
+  const flowFooter = flowPanel?.querySelector('.raw-flow-foot')
+  const flowFooterTextBottom = flowFooter
+    ? Math.max(...[...flowFooter.children].map((element) => element.getBoundingClientRect().bottom))
+    : 0
+  const flowFooterClearance = flowPanel && flowFooter
+    ? flowPanel.getBoundingClientRect().bottom - flowFooterTextBottom
+    : 0
+  if (!flowPanel || !flowFooter || flowFooterClearance < 12) {
+    violations.push(`flow-footer-clearance:${flowFooterClearance.toFixed(1)}`)
+  }
+
   const monthPanel = document.querySelector('.raw-month-panel')
   const monthSections = monthPanel
     ? [...monthPanel.children].filter((element) => {
@@ -161,6 +173,7 @@ function probeLayout() {
     board: { width: +boardRect.width.toFixed(1), height: +boardRect.height.toFixed(1) },
     violations,
     geometry,
+    flowFooterClearance: +flowFooterClearance.toFixed(1),
     monthSections: monthSections.map((section) => {
       const rect = section.getBoundingClientRect()
       return { name: section.className || section.tagName, top: +rect.top.toFixed(1), bottom: +rect.bottom.toFixed(1), height: +rect.height.toFixed(1) }

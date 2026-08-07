@@ -28,14 +28,15 @@ import { useProjectRefresh } from '../composables/useProjectRefresh'
 import { useRawMaterialDashboard } from '../composables/useRawMaterialDashboard'
 
 const { snapshot, loading, error, refresh } = useRawMaterialDashboard()
-const { refreshing, refreshVersion, refreshProject } = useProjectRefresh()
+const { refreshing, refreshVersion, lastUpdatedAt, refreshProject } = useProjectRefresh()
 const router = useRouter()
 const now = ref(new Date())
-const alertViewport = ref(null)
+const alertTrack = ref(null)
 const visibleAlertIndex = ref(0)
-const alertScrollPaused = ref(false)
+const alertLoopProgress = ref(0)
 let clockTimer
-let alertScrollTimer
+let alertProgressTimer
+let alertScrubResumeTimer
 let reducedMotionQuery
 
 const summary = computed(() => snapshot.value?.summary || {})
@@ -51,6 +52,11 @@ const alerts = computed(() => [...(snapshot.value?.openExceptions || [])]
     return Number(b.durationHours || 0) - Number(a.durationHours || 0)
   }))
 const breachedAlertCount = computed(() => alerts.value.filter((alert) => alert.slaBreached).length)
+const alertPosition = computed(() => alerts.value.length ? Math.min(alerts.value.length, visibleAlertIndex.value + 1) : 0)
+const alertProgressScale = computed(() => {
+  if (!alerts.value.length) return 0
+  return (1 + alertLoopProgress.value * (alerts.value.length - 1)) / alerts.value.length
+})
 const alertSeverityCounts = computed(() => ({
   high: alerts.value.filter((alert) => alert.severity === '紧急').length,
   medium: alerts.value.filter((alert) => alert.severity === '重要').length,
@@ -209,41 +215,69 @@ async function toggleFullscreen() {
   } catch {}
 }
 
-function updateAlertPosition() {
-  const viewport = alertViewport.value
-  const row = viewport?.querySelector('.raw-alert-list-item')
-  if (!viewport || !row) return
-  visibleAlertIndex.value = Math.min(alerts.value.length - 1, Math.max(0, Math.round(viewport.scrollTop / (row.offsetHeight + 5))))
-}
-
-function advanceAlertList() {
-  const viewport = alertViewport.value
-  const row = viewport?.querySelector('.raw-alert-list-item')
-  if (!viewport || !row) return
-  const step = row.offsetHeight + 5
-  const reachedEnd = viewport.scrollTop + viewport.clientHeight >= viewport.scrollHeight - step
-  viewport.scrollTo({ top: reachedEnd ? 0 : viewport.scrollTop + step, behavior: 'smooth' })
-}
-
 function stopAlertScroll() {
-  window.clearInterval(alertScrollTimer)
-  alertScrollTimer = undefined
+  window.clearInterval(alertProgressTimer)
+  window.clearTimeout(alertScrubResumeTimer)
+  alertProgressTimer = undefined
+  alertScrubResumeTimer = undefined
+}
+
+function alertAnimation() {
+  return alertTrack.value?.getAnimations?.()[0]
+}
+
+function setAlertProgress(progressScale) {
+  const count = alerts.value.length
+  const normalizedScale = Math.min(1, Math.max(count ? 1 / count : 0, Number(progressScale || 0)))
+  const loopProgress = count > 1
+    ? Math.min(0.999999, Math.max(0, (normalizedScale * count - 1) / (count - 1)))
+    : 0
+  const animation = alertAnimation()
+  const duration = Number(animation?.effect?.getComputedTiming?.().duration)
+
+  animation?.pause()
+  if (animation && Number.isFinite(duration) && duration > 0) animation.currentTime = duration * loopProgress
+  alertLoopProgress.value = loopProgress
+  visibleAlertIndex.value = count ? Math.min(count - 1, Math.floor(loopProgress * count)) : 0
+}
+
+function resumeAlertAfterScrub() {
+  window.clearTimeout(alertScrubResumeTimer)
+  alertScrubResumeTimer = window.setTimeout(() => {
+    if (!reducedMotionQuery?.matches && alerts.value.length > 1) alertAnimation()?.play()
+  }, 360)
+}
+
+function beginAlertScrub() {
+  window.clearTimeout(alertScrubResumeTimer)
+  alertAnimation()?.pause()
+}
+
+function scrubAlertProgress(event) {
+  setAlertProgress(event.currentTarget.value)
+  resumeAlertAfterScrub()
+}
+
+function endAlertScrub() {
+  resumeAlertAfterScrub()
+}
+
+function updateAlertProgress() {
+  const animation = alertAnimation()
+  const duration = Number(animation?.effect?.getComputedTiming?.().duration)
+  const currentTime = Number(animation?.currentTime)
+  if (!alerts.value.length || !Number.isFinite(duration) || duration <= 0 || !Number.isFinite(currentTime)) return
+  const progress = (currentTime % duration) / duration
+  alertLoopProgress.value = progress
+  visibleAlertIndex.value = Math.min(alerts.value.length - 1, Math.floor(progress * alerts.value.length))
 }
 
 function startAlertScroll() {
   stopAlertScroll()
-  if (alerts.value.length < 2 || alertScrollPaused.value || reducedMotionQuery?.matches) return
-  alertScrollTimer = window.setInterval(advanceAlertList, 2400)
-}
-
-function pauseAlertScroll() {
-  alertScrollPaused.value = true
-  stopAlertScroll()
-}
-
-function resumeAlertScroll() {
-  alertScrollPaused.value = false
-  startAlertScroll()
+  alertLoopProgress.value = 0
+  visibleAlertIndex.value = 0
+  if (alerts.value.length < 2 || reducedMotionQuery?.matches) return
+  alertProgressTimer = window.setInterval(updateAlertProgress, 100)
 }
 
 function handleMotionPreference() {
@@ -266,9 +300,22 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="page raw-material-page">
+  <div class="page raw-material-page" :data-refresh-version="refreshVersion">
     <PageState :loading="loading && !snapshot" :error="error" @retry="refresh">
       <section class="raw-board" aria-label="原料库运营看板">
+        <span class="raw-board-tech-frame" aria-hidden="true">
+          <i class="raw-board-frame-corner is-top-left" />
+          <i class="raw-board-frame-corner is-top-right" />
+          <i class="raw-board-frame-corner is-bottom-right" />
+          <i class="raw-board-frame-corner is-bottom-left" />
+          <b class="raw-board-frame-rail is-top" />
+          <b class="raw-board-frame-rail is-right" />
+          <b class="raw-board-frame-rail is-bottom" />
+          <b class="raw-board-frame-rail is-left" />
+          <em class="raw-board-frame-scan" />
+          <small class="raw-board-frame-node is-left" />
+          <small class="raw-board-frame-node is-right" />
+        </span>
         <header class="raw-masthead">
           <div class="raw-brand">
             <button class="raw-mobile-menu" type="button" aria-label="打开主导航" @click="openNavigation"><Menu :size="20" /></button>
@@ -276,12 +323,20 @@ onBeforeUnmount(() => {
             <div><p>RAW MATERIAL WAREHOUSE · {{ snapshot?.meta?.warehouseId }}</p><strong>生产保障 · 稳定供应 · 高效协同</strong></div>
           </div>
           <div class="raw-title">
+            <svg class="raw-title-frame" viewBox="0 0 720 92" preserveAspectRatio="none" aria-hidden="true" focusable="false">
+              <path class="raw-title-frame-outer" d="M0 1 H48 L128 72 Q141 85 162 85 H558 Q579 85 592 72 L672 1 H720" />
+              <path class="raw-title-frame-inner" d="M22 1 H67 L137 64 Q149 77 167 77 H553 Q571 77 583 64 L653 1 H698" />
+              <path class="raw-title-frame-guide" d="M0 45 H76 M644 45 H720" />
+              <path class="raw-title-frame-tick" d="M33 34 H83 M637 34 H687" />
+              <circle cx="14" cy="45" r="2" />
+              <circle cx="706" cy="45" r="2" />
+            </svg>
             <h1>原料库运营看板</h1>
             <span>{{ snapshot?.meta?.period }}</span>
           </div>
           <div class="raw-time">
             <div class="raw-clock"><strong>{{ now.toLocaleTimeString('zh-CN', { hour12: false }) }}</strong><span>{{ now.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' }) }}</span></div>
-            <span class="raw-data-stamp"><i />数据截至 {{ snapshot?.meta?.latestDate }}<small>每 30 秒自动刷新</small></span>
+            <span class="raw-data-stamp"><i />数据截至 {{ snapshot?.meta?.latestDate }}<small>每 30 秒自动刷新 · {{ lastUpdatedAt ? `最近刷新 ${lastUpdatedAt.toLocaleTimeString('zh-CN', { hour12: false })}` : '正在同步' }}</small></span>
             <button class="raw-control" type="button" :class="{ spinning: refreshing || loading }" :disabled="refreshing || loading" aria-label="刷新全部数据" @click="refreshProject('manual')"><RefreshCw :size="17" /><span>刷新</span></button>
             <button class="raw-control" type="button" aria-label="切换全屏显示" @click="toggleFullscreen"><Maximize2 :size="17" /><span>全屏</span></button>
           </div>
@@ -325,13 +380,14 @@ onBeforeUnmount(() => {
 
           <article class="raw-panel raw-posture-panel" role="link" tabindex="0" aria-label="查看全部储罐" @click="navigateTo('/zones')" @keydown.enter.self="navigateTo('/zones')" @keydown.space.self.prevent="navigateTo('/zones')">
             <span class="raw-panel-accent centered-accent" />
-            <header class="raw-panel-title split"><h2>原料库实时储罐状态 <CircleHelp /></h2><div class="raw-panel-head-actions"><p><AnimatedNumber :value="snapshot?.meta?.areaCount" :formatter="formatInteger" :animation-key="refreshVersion" /> 个罐区 · <AnimatedNumber :value="materialTanks.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 筒物料 · <b>在线 <AnimatedNumber :value="materialTanks.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 台</b></p></div></header>
+            <header class="raw-panel-title split"><h2>原料库实时储罐状态 <CircleHelp /></h2><div class="raw-panel-head-actions"><p><AnimatedNumber :value="snapshot?.meta?.areaCount" :formatter="formatInteger" :animation-key="refreshVersion" /> 个罐区 · 低位 ≤25% · 高位 ≥85% · <b>在线 <AnimatedNumber :value="materialTanks.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 台</b></p></div></header>
             <div class="raw-silo-overview" :aria-label="`${materialTanks.length} 个原料筒实时存量概况`">
               <article
                 v-for="(tank, index) in materialTanks"
                 :key="`${tank.id}-${refreshVersion}`"
                 class="raw-silo-card"
                 :class="[`is-${tank.materialForm}`, { 'is-high': tank.state === '高位', 'is-low': tank.state === '低位' }]"
+                data-low-threshold="0.25"
                 :style="{ '--tank-delay': `${index * 120}ms` }"
                 :aria-label="`${tank.id} ${tank.name}，当前 ${formatTon(tank.onHand)} 吨，容量 ${tank.capacityTon} 吨，装填率 ${formatPercent(tank.fillRate, 0)}，${tank.state}`"
               >
@@ -340,7 +396,7 @@ onBeforeUnmount(() => {
                   <small>{{ tank.state === '正常' ? '● 正常' : tank.state }}</small>
                 </header>
                 <div class="raw-silo-card-body">
-                  <div class="raw-silo-model"><IndustrialTank :fill-rate="tank.fillRate" :material-form="tank.materialForm" :animation-key="refreshVersion" /></div>
+                  <div class="raw-silo-model"><IndustrialTank :fill-rate="tank.fillRate" :material-form="tank.materialForm" :animation-key="refreshVersion" /><span class="raw-silo-form">{{ tank.materialFormLabel }}</span></div>
                   <div class="raw-silo-copy">
                     <strong class="raw-silo-rate"><AnimatedNumber :value="tank.fillRate" :formatter="(value) => formatPercent(value, 0)" :animation-key="refreshVersion" /><em>占用率</em></strong>
                     <strong class="raw-silo-quantity"><AnimatedNumber :value="tank.onHand" :formatter="formatTon" :animation-key="refreshVersion" /><em>吨</em></strong>
@@ -348,7 +404,7 @@ onBeforeUnmount(() => {
                     <dl><div><dt>罐容</dt><dd><AnimatedNumber :value="tank.capacityTon" :formatter="formatInteger" :animation-key="refreshVersion" /> 吨</dd></div><div><dt>物料密度</dt><dd><AnimatedNumber :value="tank.density" :formatter="formatTwoDecimals" :animation-key="refreshVersion" /> t/m³</dd></div></dl>
                   </div>
                 </div>
-                <div class="raw-silo-progress" aria-hidden="true"><i :style="{ width: formatPercent(tank.fillRate, 0) }" /></div>
+                <div class="raw-silo-progress" aria-label="25% 低位预警线"><i :style="{ width: formatPercent(tank.fillRate, 0) }" /><span class="raw-silo-low-threshold" title="25% 低位预警线" /></div>
               </article>
             </div>
             <div class="raw-posture-metrics">
@@ -411,31 +467,57 @@ onBeforeUnmount(() => {
             <div class="raw-target-strip">
               <div v-for="target in riskTargetRows" :key="target.key"><span>{{ target.name }}</span><strong :class="{ warning: !target.met }"><AnimatedNumber :value="target.value" :formatter="target.formatter" :animation-key="refreshVersion" />{{ target.unit }}</strong><small>{{ target.target }}</small></div>
             </div>
-            <div class="raw-alert-subhead"><span>异常事件（按时间降序）</span><em>共 <AnimatedNumber :value="alerts.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</em></div>
-            <div
-              ref="alertViewport"
-              class="raw-alert-viewport"
-              tabindex="0"
-              :aria-label="`全部 ${alerts.length} 条异常明细，普通纵向滚动播放；滚动条可拖动，聚焦或悬停可暂停`"
-              @scroll.passive="updateAlertPosition"
-              @mouseenter="pauseAlertScroll"
-              @mouseleave="resumeAlertScroll"
-              @focusin="pauseAlertScroll"
-              @focusout="resumeAlertScroll"
-              @pointerdown="pauseAlertScroll"
-              @pointerup="resumeAlertScroll"
-            >
-              <div class="raw-alert-list" role="list">
-                <div v-for="alert in alerts" :key="alert.id" class="raw-alert-list-item" :class="{ 'is-breached': alert.slaBreached }" role="listitem">
-                  <span :class="alert.slaBreached || alert.severity === '紧急' || alert.severity === '重要' ? 'danger' : 'warning'"><AlertTriangle :size="12" /></span>
-                  <div><strong>{{ alert.type }} · {{ alert.material }}</strong><small><b>{{ alert.slaBreached ? 'SLA 超时' : alert.severity }}</b>{{ alert.areaCode }} · {{ alert.action }} · {{ alert.owner }}</small></div>
-                  <div class="raw-alert-end"><em><AnimatedNumber :value="alert.durationHours" :formatter="formatOneDecimal" :animation-key="refreshVersion" />h</em><span :class="alertLevelClass(alert)">{{ alertLevelLabel(alert) }}</span></div>
+            <div class="raw-alert-subhead">
+              <span>异常事件（按时间降序）</span>
+              <em>共 <AnimatedNumber :value="alerts.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</em>
+            </div>
+            <div class="raw-alert-stage">
+              <div
+                class="raw-alert-viewport"
+                :aria-label="`全部 ${alerts.length} 条异常明细，持续匀速无间断滚动；右侧进度条可拖动定位`"
+              >
+                <div
+                  ref="alertTrack"
+                  class="raw-alert-track"
+                  :class="{ 'is-static': alerts.length < 2 }"
+                  :style="{ '--raw-alert-duration': `${Math.max(alerts.length, 1) * 2.2}s` }"
+                >
+                  <div v-for="copyIndex in 2" :key="copyIndex" class="raw-alert-list" :role="copyIndex === 1 ? 'list' : undefined" :aria-hidden="copyIndex === 2 ? 'true' : undefined">
+                    <div v-for="alert in alerts" :key="`${copyIndex}-${alert.id}`" class="raw-alert-list-item" :class="{ 'is-breached': alert.slaBreached }" role="listitem">
+                      <span :class="alert.slaBreached || alert.severity === '紧急' || alert.severity === '重要' ? 'danger' : 'warning'"><AlertTriangle :size="12" /></span>
+                      <div><strong>{{ alert.type }} · {{ alert.material }}</strong><small><b>{{ alert.slaBreached ? 'SLA 超时' : alert.severity }}</b>{{ alert.areaCode }} · {{ alert.action }} · {{ alert.owner }}</small></div>
+                      <div class="raw-alert-end"><em><AnimatedNumber :value="alert.durationHours" :formatter="formatOneDecimal" :animation-key="refreshVersion" />h</em><span :class="alertLevelClass(alert)">{{ alertLevelLabel(alert) }}</span></div>
+                    </div>
+                  </div>
                 </div>
               </div>
+              <aside class="raw-alert-side-progress" title="拖动定位异常事件" @click.stop @pointerdown.stop @keydown.stop>
+                <output class="raw-alert-position">{{ alertPosition }}/{{ alerts.length }}</output>
+                <div class="raw-alert-progress" :style="{ '--alert-progress': `${alertProgressScale * 100}%` }">
+                  <i aria-hidden="true" />
+                  <span aria-hidden="true" />
+                  <input
+                    type="range"
+                    :min="alerts.length ? 1 / alerts.length : 0"
+                    max="1"
+                    step="0.001"
+                    :value="alertProgressScale"
+                    aria-label="拖动定位异常事件"
+                    aria-orientation="vertical"
+                    :aria-valuetext="`第 ${alertPosition} 条，共 ${alerts.length} 条`"
+                    @input="scrubAlertProgress"
+                    @pointerdown="beginAlertScrub"
+                    @pointerup="endAlertScrub"
+                    @pointercancel="endAlertScrub"
+                    @change="endAlertScrub"
+                  >
+                </div>
+                <small>拖动</small>
+              </aside>
             </div>
             <div class="raw-risk-foot">
               <div class="raw-risk-summary"><strong>全部异常 <AnimatedNumber :value="alerts.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</strong><span class="danger">高风险 <AnimatedNumber :value="alertSeverityCounts.high" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</span><span class="warning">中风险 <AnimatedNumber :value="alertSeverityCounts.medium" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</span><span>低风险 <AnimatedNumber :value="alertSeverityCounts.low" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</span></div>
-              <p><span><AnimatedNumber :value="Math.min(visibleAlertIndex + 1, alerts.length)" :formatter="formatInteger" :animation-key="refreshVersion" />/<AnimatedNumber :value="alerts.length" :formatter="formatInteger" :animation-key="refreshVersion" /></span><span class="raw-risk-sla">SLA 超时 <strong><AnimatedNumber :value="breachedAlertCount" :formatter="formatInteger" :animation-key="refreshVersion" /></strong></span></p>
+              <p><span class="raw-risk-sla">SLA 超时 <strong><AnimatedNumber :value="breachedAlertCount" :formatter="formatInteger" :animation-key="refreshVersion" /></strong></span></p>
             </div>
           </article>
         </div>
@@ -767,13 +849,27 @@ onBeforeUnmount(() => {
 .raw-target-strip strong.warning { color: var(--rm-warning); }
 .raw-target-strip strong.warning + small { color: #e6bc6a; }
 .raw-risk-panel { display: flex; flex-direction: column; }
-.raw-alert-viewport { position: relative; z-index: 2; min-height: 0; flex: 1; overflow-x: hidden; overflow-y: auto; outline: none; overscroll-behavior: contain; scroll-behavior: smooth; scrollbar-color: rgba(53,211,199,.72) rgba(75,111,132,.14); scrollbar-width: thin; }
+.raw-alert-stage { position: relative; z-index: 2; display: grid; min-height: 0; flex: 1; grid-template-columns: minmax(0, 1fr) 28px; }
+.raw-alert-viewport { position: relative; min-height: 0; overflow: hidden; outline: none; }
 .raw-alert-viewport::-webkit-scrollbar { width: 7px; }
 .raw-alert-viewport::-webkit-scrollbar-track { border-radius: 8px; background: rgba(75,111,132,.13); }
 .raw-alert-viewport::-webkit-scrollbar-thumb { border: 2px solid rgba(7,22,34,.82); border-radius: 8px; background: rgba(53,211,199,.74); }
 .raw-alert-viewport::-webkit-scrollbar-thumb:hover { background: var(--rm-accent); }
 .raw-alert-viewport:focus-visible { border-radius: 8px; box-shadow: inset 0 0 0 2px rgba(53,211,199,.7); }
+.raw-alert-track { min-height: 100%; animation: raw-alert-continuous-scroll var(--raw-alert-duration, 110s) linear infinite; will-change: transform; }
+.raw-alert-track.is-static { animation: none; }
 .raw-alert-list { display: grid; gap: 5px; padding: 0 5px 5px 10px; }
+@keyframes raw-alert-continuous-scroll { to { transform: translateY(-50%); } }
+.raw-alert-side-progress { display: grid; min-height: 0; grid-template-rows: 14px minmax(60px, 1fr) 13px; place-items: center; padding: 2px 3px 3px; border-left: 1px solid rgba(29, 127, 162, .28); background: linear-gradient(90deg, rgba(2, 22, 38, .14), rgba(5, 40, 59, .5)); }
+.raw-alert-side-progress output { min-width: 25px; color: #c5e9f2; font: 700 clamp(6px, .42cqw, 8px)/1 "Bahnschrift", "Segoe UI", sans-serif; font-variant-numeric: tabular-nums; text-align: center; white-space: nowrap; }
+.raw-alert-side-progress > small { color: var(--rm-dim); font-size: 6px; line-height: 1; letter-spacing: .08em; }
+.raw-alert-progress { --alert-progress: 0%; position: relative; width: 18px; height: 100%; min-height: 60px; border-radius: 9px; }
+.raw-alert-progress::before { position: absolute; top: 2px; bottom: 2px; left: 50%; width: 5px; border: 1px solid rgba(42, 178, 213, .46); border-radius: 4px; content: ""; background: rgba(24, 67, 91, .72); box-shadow: inset 0 1px 3px rgba(0,0,0,.58), 0 0 8px rgba(19, 183, 207, .1); transform: translateX(-50%); }
+.raw-alert-progress i { position: absolute; z-index: 1; top: 2px; left: 50%; width: 5px; height: min(calc(var(--alert-progress) - 2px), calc(100% - 4px)); min-height: 2px; border-radius: 4px; background: linear-gradient(180deg, var(--rm-cyan), var(--rm-accent)); box-shadow: 0 0 8px color-mix(in srgb, var(--rm-accent) 58%, transparent); transform: translateX(-50%); transition: height .12s linear; }
+.raw-alert-progress > span { position: absolute; z-index: 2; top: clamp(5px, var(--alert-progress), calc(100% - 5px)); left: 50%; width: 13px; height: 9px; border: 1px solid #bdefff; border-radius: 3px; background: #0d9bb2; box-shadow: 0 0 0 2px rgba(4, 33, 49, .88), 0 0 9px rgba(52, 217, 232, .62); pointer-events: none; transform: translate(-50%, -50%); transition: top .12s linear; }
+.raw-alert-progress input { position: absolute; z-index: 3; inset: 0; width: 100%; height: 100%; margin: 0; cursor: ns-resize; opacity: .001; writing-mode: vertical-lr; direction: ltr; }
+.raw-alert-progress:focus-within { border-radius: 9px; box-shadow: 0 0 0 2px rgba(83, 224, 238, .78), 0 0 10px rgba(31, 196, 214, .3); }
+.raw-alert-progress:hover > span { background: #19bdd0; transform: translate(-50%, -50%) scale(1.08); }
 .raw-alert-list-item { display: grid; min-height: 42px; grid-template-columns: 23px 1fr auto; align-items: center; gap: 7px; padding: 5px 8px; border: 1px solid rgba(146,193,216,.12); border-radius: 9px; background: linear-gradient(145deg, rgba(26,56,74,.62), rgba(8,27,41,.58)); box-shadow: inset 0 1px rgba(255,255,255,.045); }
 .raw-alert-list-item.is-breached { border-left-color: var(--rm-danger); background: linear-gradient(90deg, rgba(251,113,133,.08), rgba(13,38,54,.58) 34%); }
 .raw-alert-list-item > span { display: grid; width: 21px; height: 21px; place-items: center; border-radius: 50%; }
@@ -793,6 +889,7 @@ onBeforeUnmount(() => {
 .raw-risk-foot > div strong { color: var(--rm-text); font-size: clamp(8px, .54cqw, 10px); }
 .raw-risk-foot p { margin: 0; color: var(--rm-muted); font-size: clamp(8px, .5cqw, 9px); }
 .raw-risk-foot p span { margin-right: 8px; color: var(--rm-accent); font-variant-numeric: tabular-nums; }
+.raw-alert-position { display: inline-block; min-width: 31px; color: #c5e9f2; font-size: inherit; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
 .raw-risk-foot p strong { margin-left: 4px; color: var(--rm-danger); }
 
 .raw-board, .raw-panel, .raw-kpi-strip article, .raw-today-pair > div, .raw-silo-overview, .raw-month-overview > div, .raw-zone-card { transition: border-color .3s ease, box-shadow .3s ease, background-color .3s ease; }
@@ -1396,6 +1493,95 @@ onBeforeUnmount(() => {
   background: linear-gradient(90deg, transparent 46%, var(--rm-accent) 46% 54%, transparent 54%) top / 100% 1px no-repeat;
   clip-path: polygon(0 0, 31% 0, 32% 35%, 68% 35%, 69% 0, 100% 0, 100% 100%, 0 100%);
 }
+.raw-board-tech-frame {
+  position: absolute;
+  z-index: 19;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--rm-cyan) 20%, transparent));
+}
+.raw-board-frame-corner {
+  position: absolute;
+  width: clamp(38px, 3.8cqw, 64px);
+  height: clamp(28px, 2.6cqw, 44px);
+  border-top: 2px solid color-mix(in srgb, var(--rm-cyan) 82%, transparent);
+  border-left: 2px solid color-mix(in srgb, var(--rm-accent) 76%, transparent);
+  clip-path: polygon(0 0, 100% 0, 100% 5px, 43% 5px, 34% 12px, 5px 12px, 5px 100%, 0 100%);
+}
+.raw-board-frame-corner::before {
+  position: absolute;
+  top: 4px;
+  left: 5px;
+  width: 32%;
+  height: 2px;
+  content: "";
+  background: var(--rm-cyan);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--rm-cyan) 64%, transparent);
+}
+.raw-board-frame-corner::after {
+  position: absolute;
+  top: 8px;
+  left: 1px;
+  width: 5px;
+  height: 5px;
+  border: 1px solid var(--rm-accent);
+  content: "";
+  background: #021522;
+  transform: rotate(45deg);
+}
+.raw-board-frame-corner.is-top-left { top: 1px; left: 2px; }
+.raw-board-frame-corner.is-top-right { top: 1px; right: 2px; transform: rotate(90deg); }
+.raw-board-frame-corner.is-bottom-right { right: 2px; bottom: 9px; transform: rotate(180deg); }
+.raw-board-frame-corner.is-bottom-left { bottom: 9px; left: 2px; transform: rotate(270deg); }
+.raw-board-frame-rail { position: absolute; display: block; opacity: .72; }
+.raw-board-frame-rail.is-top,
+.raw-board-frame-rail.is-bottom {
+  right: 12%;
+  left: 12%;
+  height: 1px;
+  background: repeating-linear-gradient(90deg, color-mix(in srgb, var(--rm-cyan) 72%, transparent) 0 24px, transparent 24px 33px);
+}
+.raw-board-frame-rail.is-top { top: 1px; }
+.raw-board-frame-rail.is-bottom { bottom: 9px; opacity: .46; }
+.raw-board-frame-rail.is-left,
+.raw-board-frame-rail.is-right {
+  top: 11%;
+  bottom: 12%;
+  width: 1px;
+  background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--rm-accent) 64%, transparent) 0 19px, transparent 19px 29px);
+}
+.raw-board-frame-rail.is-left { left: 2px; }
+.raw-board-frame-rail.is-right { right: 2px; }
+.raw-board-frame-scan {
+  position: absolute;
+  top: 0;
+  left: -18%;
+  width: 16%;
+  height: 2px;
+  opacity: .68;
+  background: linear-gradient(90deg, transparent, var(--rm-cyan) 55%, #e6fbff 74%, transparent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--rm-cyan) 58%, transparent);
+  animation: raw-board-frame-scan 8s ease-in-out infinite;
+}
+.raw-board-frame-node {
+  position: absolute;
+  top: 49%;
+  width: 7px;
+  height: 18px;
+  border: 1px solid color-mix(in srgb, var(--rm-cyan) 70%, transparent);
+  background: linear-gradient(180deg, transparent 0 28%, var(--rm-accent) 28% 72%, transparent 72%);
+  box-shadow: 0 0 9px color-mix(in srgb, var(--rm-accent) 34%, transparent);
+  clip-path: polygon(50% 0, 100% 22%, 100% 78%, 50% 100%, 0 78%, 0 22%);
+  transform: translateY(-50%);
+}
+.raw-board-frame-node.is-left { left: 0; }
+.raw-board-frame-node.is-right { right: 0; }
+@keyframes raw-board-frame-scan {
+  0%, 12% { opacity: 0; transform: translateX(0); }
+  22%, 78% { opacity: .68; }
+  88%, 100% { opacity: 0; transform: translateX(735%); }
+}
 
 .raw-masthead {
   position: relative;
@@ -1423,22 +1609,40 @@ onBeforeUnmount(() => {
   place-content: center;
 }
 .raw-title::before,
-.raw-title::after {
+.raw-title::after { display: none; }
+.raw-title-frame {
   position: absolute;
+  z-index: 0;
   top: 0;
-  bottom: 8px;
-  width: 35%;
-  border-bottom: 1px solid rgba(17, 195, 228, .68);
-  content: "";
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
   pointer-events: none;
+  filter: drop-shadow(0 0 5px rgba(15, 205, 237, .38));
 }
-.raw-title::before { left: -8%; transform: skewX(40deg); }
-.raw-title::after { right: -8%; transform: skewX(-40deg); }
+.raw-title-frame path,
+.raw-title-frame circle { vector-effect: non-scaling-stroke; }
+.raw-title-frame path { fill: none; stroke-linecap: square; }
+.raw-title-frame-outer { stroke: color-mix(in srgb, var(--rm-cyan) 88%, transparent); stroke-width: 1.35; }
+.raw-title-frame-inner { stroke: color-mix(in srgb, var(--rm-accent) 57%, transparent); stroke-width: .8; }
+.raw-title-frame-guide { stroke: color-mix(in srgb, var(--rm-cyan) 48%, transparent); stroke-width: .75; }
+.raw-title-frame-tick { stroke: color-mix(in srgb, var(--rm-cyan) 72%, transparent); stroke-width: 1; }
+.raw-title-frame circle { fill: #64edff; stroke: rgba(198, 249, 255, .8); stroke-width: .5; filter: drop-shadow(0 0 4px #19d8ef); }
 .raw-title h1 {
   position: relative;
   z-index: 1;
   margin: 0;
+  justify-self: center;
+  width: fit-content;
+  padding: 3px clamp(22px, 2cqw, 34px) 10px;
+  border: 0;
+  border-radius: 0;
   color: #e8f8ff;
+  background: radial-gradient(ellipse at 50% 70%, rgba(16, 168, 203, .14), transparent 67%);
+  box-shadow: none;
   font-size: clamp(28px, 2.5cqw, 42px);
   font-weight: 800;
   letter-spacing: .08em;
@@ -1557,7 +1761,8 @@ onBeforeUnmount(() => {
 .raw-today-pair > div:last-child em { display: block; margin-top: 2px; color: var(--rm-dim); font-size: 7px; font-style: normal; }
 .raw-today-pair strong { font-size: clamp(18px, 1.45cqw, 25px); }
 .raw-trend-chart { min-height: 165px; max-height: 215px; flex: 1 0 165px; height: clamp(165px, 12.5cqw, 215px) !important; margin-top: 1px; }
-.raw-flow-foot { min-height: 30px; padding: 3px 9px 2px 13px; }
+.raw-flow-foot { min-height: 30px; flex: 0 0 30px; padding: 0 10px 10px 13px; overflow: hidden; line-height: 1.2; white-space: nowrap; background: linear-gradient(180deg, rgba(4, 32, 50, .18), rgba(2, 21, 36, .72)); }
+.raw-flow-foot em { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 
 .raw-posture-panel { padding-bottom: 5px; }
 .raw-silo-overview {
@@ -1584,8 +1789,8 @@ onBeforeUnmount(() => {
 }
 .raw-silo-card.is-powder { --material-top: #f6c762; --material-mid: #d89328; --material-bottom: #8f5d12; --material-highlight: #fff0be; --material-glow: rgba(246, 184, 63, .28); }
 .raw-silo-card.is-granule { --material-top: #42ebe0; --material-mid: #11bdc1; --material-bottom: #087888; --material-highlight: #cafffb; --material-glow: rgba(22, 214, 207, .32); }
-.raw-silo-card.is-roll { --material-top: #38dfda; --material-mid: #10aeb7; --material-bottom: #087482; --material-highlight: #c9ffff; --material-glow: rgba(20, 196, 202, .28); }
-.raw-silo-card.is-liquid { --material-top: #39e6ce; --material-mid: #12b6a9; --material-bottom: #08796e; --material-highlight: #cafff3; --material-glow: rgba(22, 207, 187, .28); }
+.raw-silo-card.is-roll { --material-top: #c6a7ff; --material-mid: #8e68df; --material-bottom: #50349a; --material-highlight: #f0e7ff; --material-glow: rgba(157, 113, 238, .32); }
+.raw-silo-card.is-liquid { --material-top: #63efad; --material-mid: #19bb78; --material-bottom: #087452; --material-highlight: #d8ffec; --material-glow: rgba(43, 214, 139, .3); }
 .raw-silo-card:not(:last-child)::after { display: none; }
 .raw-silo-card-head { min-height: 23px; align-items: center; }
 .raw-silo-card-head > span { gap: 4px; overflow: hidden; }
@@ -1604,6 +1809,7 @@ onBeforeUnmount(() => {
   padding: 2px 0 3px;
 }
 .raw-silo-model {
+  position: relative;
   width: clamp(82px, 5.8cqw, 98px);
   height: 100%;
   min-height: 0;
@@ -1611,6 +1817,7 @@ onBeforeUnmount(() => {
   align-self: center;
   justify-self: center;
 }
+.raw-silo-form { position: absolute; z-index: 3; top: 2px; right: 0; padding: 2px 5px; border: 1px solid color-mix(in srgb, var(--material-top) 48%, transparent); border-radius: 4px; color: var(--material-top); background: rgba(2, 24, 39, .82); font-size: 7px; line-height: 1; box-shadow: 0 0 7px var(--material-glow); }
 .raw-silo-vessel {
   width: clamp(70px, 5.1cqw, 86px);
   height: clamp(116px, 8.3cqw, 140px);
@@ -1708,8 +1915,9 @@ onBeforeUnmount(() => {
 .raw-silo-copy dt,
 .raw-silo-copy dd { margin: 0; }
 .raw-silo-copy dd { color: #a4bdca; white-space: nowrap; }
-.raw-silo-progress { position: relative; z-index: 4; height: 5px; flex: 0 0 5px; margin-top: 6px; overflow: hidden; border-radius: 4px; background: rgba(91, 124, 143, .25); box-shadow: inset 0 1px 2px rgba(0,0,0,.32); }
+.raw-silo-progress { position: relative; z-index: 4; height: 6px; flex: 0 0 6px; margin-top: 6px; overflow: hidden; border-radius: 4px; background: rgba(91, 124, 143, .25); box-shadow: inset 0 1px 2px rgba(0,0,0,.32); }
 .raw-silo-progress i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--material-bottom), var(--material-top)); box-shadow: 0 0 8px var(--material-glow); }
+.raw-silo-low-threshold { position: absolute; z-index: 2; top: 0; bottom: 0; left: 25%; width: 2px; background: #eaf9ff; box-shadow: 0 0 0 1px rgba(2, 31, 48, .72), 0 0 7px #63dcff; transform: translateX(-1px); }
 .raw-posture-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 9px; overflow: hidden; border: 1px solid rgba(9, 102, 139, .32); border-radius: 7px; }
 .raw-posture-metrics > div { min-height: clamp(34px, 2.55cqw, 43px); }
 
@@ -1746,7 +1954,8 @@ onBeforeUnmount(() => {
 .raw-target-strip strong { margin: 3px 0 2px; }
 .raw-target-strip > div > span,
 .raw-target-strip > div > small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.raw-alert-subhead { position: relative; z-index: 2; display: flex; min-height: 20px; flex: 0 0 20px; align-items: center; justify-content: space-between; padding: 1px 12px 2px; border-top: 1px solid rgba(14, 105, 143, .18); color: #7b9aab; font-size: clamp(7px, .48cqw, 9px); }
+.raw-alert-subhead { position: relative; z-index: 2; display: flex; min-height: 22px; flex: 0 0 22px; align-items: center; gap: 8px; padding: 2px 10px; border-top: 1px solid rgba(14, 105, 143, .18); border-bottom: 1px solid rgba(17, 125, 161, .18); color: #7b9aab; font-size: clamp(7px, .48cqw, 9px); }
+.raw-alert-subhead > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .raw-alert-subhead em { color: #9eb4c0; font-style: normal; }
 .raw-alert-list { gap: 4px; padding-right: 8px; }
 .raw-alert-list-item {
@@ -1826,10 +2035,12 @@ onBeforeUnmount(() => {
 @media (max-width: 900px) {
   .raw-board { padding: 0 10px 12px; }
   .raw-board::before,
-  .raw-board::after { display: none; }
+  .raw-board::after,
+  .raw-board-tech-frame { display: none; }
   .raw-masthead { height: 64px; grid-template-columns: auto 1fr; }
   .raw-title::before,
   .raw-title::after { display: none; }
+  .raw-title-frame { display: none; }
   .raw-kpi-strip { height: auto; }
   .raw-board-grid { grid-template-columns: 1fr; grid-template-rows: auto; }
   .raw-flow-panel,
@@ -1851,6 +2062,9 @@ onBeforeUnmount(() => {
   .raw-kpi-card[role="link"], .raw-panel[role="link"] { transition: none; }
   .raw-kpi-card[role="link"]:hover, .raw-kpi-card[role="link"]:focus-visible, .raw-panel[role="link"]:hover, .raw-panel[role="link"]:focus-visible, .raw-kpi-card[role="link"]:active, .raw-panel[role="link"]:active { transform: none; }
   .raw-alert-viewport { scroll-behavior: auto; }
+  .raw-alert-track { animation: none; transform: none; }
+  .raw-alert-progress i { transition: none; }
+  .raw-board-frame-scan { display: none; }
   .raw-silo-card, .raw-silo-vessel, .raw-silo-fill, .raw-silo-fill::before, .raw-silo-fill i, .raw-silo-shine { animation: none; }
 }
 </style>

@@ -12,6 +12,7 @@ const clipId = `tank-interior-${uid}`
 const metalId = `tank-metal-${uid}`
 const domeId = `tank-dome-${uid}`
 const liquidId = `tank-liquid-${uid}`
+const textureId = `tank-texture-${uid}`
 const clampedFill = computed(() => Math.min(1, Math.max(0, Number(props.fillRate || 0))))
 const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 const displayedFill = ref(reduceMotion ? clampedFill.value : 0)
@@ -72,6 +73,26 @@ onBeforeUnmount(() => window.cancelAnimationFrame(riseFrame))
         <stop offset=".48" stop-color="var(--tank-fill-mid)" />
         <stop offset="1" stop-color="var(--tank-fill-bottom)" />
       </linearGradient>
+      <pattern :id="textureId" width="16" height="16" patternUnits="userSpaceOnUse">
+        <template v-if="materialForm === 'powder'">
+          <circle cx="3" cy="4" r="1.15" fill="#fff2bf" opacity=".82" />
+          <circle cx="11" cy="9" r=".85" fill="#6f4308" opacity=".56" />
+          <circle cx="6" cy="14" r=".7" fill="#ffe199" opacity=".72" />
+        </template>
+        <template v-else-if="materialForm === 'granule'">
+          <circle cx="4" cy="4" r="2.2" fill="#cafffb" opacity=".72" />
+          <circle cx="12" cy="12" r="2.2" fill="#057484" opacity=".68" />
+          <circle cx="4" cy="4" r=".8" fill="#ffffff" opacity=".74" />
+        </template>
+        <template v-else-if="materialForm === 'roll'">
+          <circle cx="8" cy="8" r="6" fill="none" stroke="#f0e7ff" stroke-width="1.4" opacity=".72" />
+          <circle cx="8" cy="8" r="2.5" fill="none" stroke="#4d2a93" stroke-width="1.2" opacity=".8" />
+        </template>
+        <template v-else>
+          <path d="M-2 5 Q2 1 6 5 T14 5 T22 5" fill="none" stroke="#d8ffec" stroke-width="1.2" opacity=".62" />
+          <path d="M-2 13 Q2 9 6 13 T14 13 T22 13" fill="none" stroke="#087452" stroke-width="1" opacity=".46" />
+        </template>
+      </pattern>
       <clipPath :id="clipId">
         <path d="M28 42 Q60 29 92 42 L92 124 L73 155 H47 L28 124 Z" />
       </clipPath>
@@ -92,6 +113,14 @@ onBeforeUnmount(() => window.cancelAnimationFrame(riseFrame))
           width="66"
           :height="liquidHeight"
           :fill="`url(#${liquidId})`"
+        />
+        <rect
+          class="industrial-tank__texture"
+          x="27"
+          :y="liquidY"
+          width="66"
+          :height="liquidHeight"
+          :fill="`url(#${textureId})`"
         />
         <ellipse
           class="industrial-tank__surface"
@@ -142,9 +171,10 @@ onBeforeUnmount(() => window.cancelAnimationFrame(riseFrame))
   --tank-fill-mid: #d89328;
   --tank-fill-bottom: #8f5d12;
 }
-.industrial-tank.is-roll { --tank-fill-top: #39e4df; --tank-fill-mid: #12b6c0; --tank-fill-bottom: #087885; }
-.industrial-tank.is-liquid { --tank-fill-top: #3ce8cf; --tank-fill-mid: #12b8aa; --tank-fill-bottom: #087a6f; }
+.industrial-tank.is-roll { --tank-fill-top: #c6a7ff; --tank-fill-mid: #8e68df; --tank-fill-bottom: #50349a; }
+.industrial-tank.is-liquid { --tank-fill-top: #63efad; --tank-fill-mid: #19bb78; --tank-fill-bottom: #087452; }
 .industrial-tank__liquid,
+.industrial-tank__texture,
 .industrial-tank__surface {
   transition:
     y 2.8s cubic-bezier(.4,0,.2,1),
@@ -157,6 +187,7 @@ onBeforeUnmount(() => window.cancelAnimationFrame(riseFrame))
 
 @media (prefers-reduced-motion: reduce) {
   .industrial-tank__liquid,
+  .industrial-tank__texture,
   .industrial-tank__surface { transition: none; }
 }
 </style>
