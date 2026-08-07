@@ -24,6 +24,13 @@ spring:
     time-zone: Asia/Shanghai
     default-property-inclusion: non_null
 
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    banner: false
+
 warehouse:
   cors-origins: http://127.0.0.1:5173,http://localhost:5173
   seed-enabled: ${WAREHOUSE_SEED_ENABLED:true}
