@@ -1,6 +1,5 @@
 package com.intco.warehouse.service;
 import com.intco.warehouse.entity.WarehouseEntity;
-import com.intco.warehouse.mapper.WarehouseMapper;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -49,14 +48,14 @@ public class WarehouseImportService {
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"),
             DateTimeFormatter.ISO_LOCAL_DATE_TIME);
 
-    private final WarehouseMapper warehouseMapper;
+    private final EntityPersistenceService persistenceService;
 
-    public WarehouseImportService(WarehouseMapper warehouseMapper) {
-        this.warehouseMapper = warehouseMapper;
+    public WarehouseImportService(EntityPersistenceService persistenceService) {
+        this.persistenceService = persistenceService;
     }
 
     public boolean isEmpty() {
-        return warehouseMapper.selectCount(null) == 0;
+        return persistenceService.isWarehouseEmpty();
     }
 
     @Transactional
@@ -72,7 +71,7 @@ public class WarehouseImportService {
             }
 
             clearBusinessTables();
-            insertRows(warehouses, warehouseMapper::insertWarehouses);
+            persistenceService.insertWarehouses(warehouses);
 
             int importedRows = warehouses.size();
             importedRows += importInventory(workbook);
@@ -120,9 +119,9 @@ public class WarehouseImportService {
         if (rows.isEmpty()) throw new IllegalArgumentException("CSV 中没有可导入的数据行");
 
         for (Object[] row : rows) {
-            warehouseMapper.deleteWarehouseDaily(row[0], row[1]);
+            persistenceService.deleteWarehouseDaily(row[0], row[1]);
         }
-        insertRows(rows, warehouseMapper::insertWarehouseDaily);
+        persistenceService.insertWarehouseDaily(rows);
         writeImportJob(importId, fileName, "WAREHOUSE_DAILY_CSV", rows.size(), startedAt, "SUCCESS", "仓库日指标已按日期和仓库合并");
         LocalDate[] range = dateRange();
         return new ImportSummary(importId, "WAREHOUSE_DAILY_CSV", rows.size(), range[0], range[1]);
@@ -172,7 +171,7 @@ public class WarehouseImportService {
                 table.decimal(row, "on_hand_main_qty"), table.decimal(row, "reserved_main_qty"), table.decimal(row, "frozen_main_qty"),
                 table.decimal(row, "vendor_owned_on_hand_main_qty")
         }));
-        insertRows(rows, warehouseMapper::insertInventory);
+        persistenceService.insertInventory(rows);
         return rows.size();
     }
 
@@ -192,7 +191,7 @@ public class WarehouseImportService {
                 table.nullableDecimal(row, "delivery_timely_rate"), table.nullableDecimal(row, "avg_receipt_minutes"),
                 table.nullableDecimal(row, "avg_picking_minutes"), table.integer(row, "exception_count"), table.nullableDecimal(row, "avg_outbound_lead_days")
         }));
-        insertRows(rows, warehouseMapper::insertSkuDaily);
+        persistenceService.insertSkuDaily(rows);
         return rows.size();
     }
 
@@ -200,7 +199,7 @@ public class WarehouseImportService {
         Table table = Table.open(workbook, "运营_仓库每日指标", "biz_date");
         List<Object[]> rows = new ArrayList<>();
         table.forEach(row -> rows.add(warehouseDailyRow(table, row)));
-        insertRows(rows, warehouseMapper::insertWarehouseDaily);
+        persistenceService.insertWarehouseDaily(rows);
         return rows.size();
     }
 
@@ -223,7 +222,7 @@ public class WarehouseImportService {
                 table.requiredText(row, "area_name"), table.integer(row, "capacity_locations"), table.integer(row, "occupied_locations"),
                 table.integer(row, "available_locations"), table.decimal(row, "occupancy_rate"), table.integer(row, "material_type_count"),
                 table.integer(row, "abnormal_location_count"), table.decimal(row, "frozen_qty"), table.text(row, "area_owner"), table.requiredText(row, "status")}));
-        insertRows(rows, warehouseMapper::insertAreaSnapshots);
+        persistenceService.insertAreaSnapshots(rows);
         return rows.size();
     }
 
@@ -239,7 +238,7 @@ public class WarehouseImportService {
                 table.nullableDecimal(row, "sla_hours"), table.nullableTimestamp(row, "deadline_time"), table.nullableTimestamp(row, "close_time"),
                 table.nullableInteger(row, "duration_minutes"), table.yesNo(row, "is_sla_breached"), table.text(row, "root_cause"),
                 table.text(row, "action_taken"), table.text(row, "remark")}));
-        insertRows(rows, warehouseMapper::insertExceptions);
+        persistenceService.insertExceptions(rows);
         return rows.size();
     }
 
@@ -252,7 +251,7 @@ public class WarehouseImportService {
                 table.requiredText(row, "component_material_code"), table.requiredText(row, "component_material_name"), table.text(row, "component_color"),
                 table.text(row, "component_model"), table.requiredText(row, "component_uom"), table.decimal(row, "component_qty_per_finished_carton"),
                 table.requiredText(row, "component_qty_uom"), table.text(row, "bom_relationship")}));
-        insertRows(rows, warehouseMapper::insertBom);
+        persistenceService.insertBom(rows);
         return rows.size();
     }
 
@@ -261,7 +260,7 @@ public class WarehouseImportService {
         List<Object[]> rows = new ArrayList<>();
         table.forEach(row -> rows.add(new Object[]{table.requiredText(row, "kpi_name"), table.decimal(row, "target_value"),
                 table.requiredText(row, "unit"), table.requiredText(row, "warning_rule"), table.text(row, "calculation_definition"), table.text(row, "data_source")}));
-        insertRows(rows, warehouseMapper::insertTargets);
+        persistenceService.insertTargets(rows);
         return rows.size();
     }
 
@@ -273,7 +272,7 @@ public class WarehouseImportService {
                 table.requiredText(row, "rule_condition"), table.requiredText(row, "result_level"),
                 table.text(row, "action_guidance"), table.text(row, "applicable_scope")
         }));
-        insertRows(rows, warehouseMapper::insertInventoryAgeRules);
+        persistenceService.insertInventoryAgeRules(rows);
         return rows.size();
     }
 
@@ -300,7 +299,7 @@ public class WarehouseImportService {
                 table.text(row, "priority"), table.text(row, "recommended_action"),
                 table.text(row, "owner"), table.text(row, "data_source")
         }));
-        insertRows(rows, warehouseMapper::insertInventoryAgeBatches);
+        persistenceService.insertInventoryAgeBatches(rows);
         return rows.size();
     }
 
@@ -327,31 +326,17 @@ public class WarehouseImportService {
                 table.yesNo(row, "is_stagnant"), table.decimal(row, "stagnant_score"),
                 table.text(row, "priority"), table.text(row, "recommended_action"), table.text(row, "owner")
         }));
-        insertRows(rows, warehouseMapper::insertInventoryAgeSkus);
+        persistenceService.insertInventoryAgeSkus(rows);
         return rows.size();
     }
 
-    private void insertRows(List<Object[]> rows, java.util.function.ToIntFunction<Object[]> inserter) {
-        for (Object[] row : rows) inserter.applyAsInt(row);
-    }
-
     private void clearBusinessTables() {
-        warehouseMapper.clearExceptionEvents();
-        warehouseMapper.clearAreaSnapshots();
-        warehouseMapper.clearWarehouseDaily();
-        warehouseMapper.clearSkuDaily();
-        warehouseMapper.clearInventory();
-        warehouseMapper.clearBom();
-        warehouseMapper.clearTargets();
-        warehouseMapper.clearInventoryAgeBatches();
-        warehouseMapper.clearInventoryAgeSkus();
-        warehouseMapper.clearInventoryAgeRules();
-        warehouseMapper.clearWarehouses();
+        persistenceService.clearAll();
     }
 
     private Map<String, String> warehouseIdsByName() {
         Map<String, String> result = new HashMap<>();
-        for (WarehouseEntity warehouse : warehouseMapper.selectList(null)) {
+        for (WarehouseEntity warehouse : persistenceService.warehouses()) {
             result.put(warehouse.getWarehouseName(), warehouse.getWarehouseId());
         }
         return result;
@@ -364,20 +349,11 @@ public class WarehouseImportService {
     }
 
     private void writeImportJob(String id, String fileName, String type, int rows, LocalDateTime startedAt, String status, String message) {
-        warehouseMapper.insertImportJob(id, fileName == null ? "" : fileName, type, rows, startedAt, LocalDateTime.now(), status, message);
+        persistenceService.insertImportJob(id, fileName == null ? "" : fileName, type, rows, startedAt, LocalDateTime.now(), status, message);
     }
 
     private LocalDate[] dateRange() {
-        Map<String, Object> meta = warehouseMapper.selectMeta(null);
-        Date start = (Date) mapValue(meta, "start_date");
-        Date end = (Date) mapValue(meta, "end_date");
-        return new LocalDate[]{start == null ? null : start.toLocalDate(), end == null ? null : end.toLocalDate()};
-    }
-
-    private static Object mapValue(Map<String, Object> row, String key) {
-        for (Map.Entry<String, Object> entry : row.entrySet())
-            if (entry.getKey().equalsIgnoreCase(key)) return entry.getValue();
-        return null;
+        return persistenceService.metricDateRange();
     }
 
     private Map<String, String> canonicalCsvHeaders(Iterable<String> sourceHeaders) {
@@ -394,7 +370,7 @@ public class WarehouseImportService {
     private Object[] csvDailyRow(Map<String, String> values, int rowNumber) {
         try {
             String warehouseId = value(values, "warehouse_id", "WH-FG03");
-            WarehouseEntity warehouse = warehouseMapper.selectById(warehouseId);
+            WarehouseEntity warehouse = persistenceService.warehouse(warehouseId);
             if (warehouse == null) throw new IllegalArgumentException("?????" + warehouseId);
             return new Object[]{Date.valueOf(parseDate(value(values, "biz_date", null))), warehouseId,
                     value(values, "warehouse_name", warehouse.getWarehouseName()),

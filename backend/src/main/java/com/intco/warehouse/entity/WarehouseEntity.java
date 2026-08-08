@@ -2,6 +2,7 @@ package com.intco.warehouse.entity;
 
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import java.time.LocalDateTime;
 
 @TableName("warehouse")
 public class WarehouseEntity {
@@ -13,6 +14,8 @@ public class WarehouseEntity {
     private Integer areaCount;
     private Integer capacityLocations;
     private String warehouseOwner;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
 
     public String getWarehouseId() { return warehouseId; }
     public void setWarehouseId(String warehouseId) { this.warehouseId = warehouseId; }
@@ -28,4 +31,8 @@ public class WarehouseEntity {
     public void setCapacityLocations(Integer capacityLocations) { this.capacityLocations = capacityLocations; }
     public String getWarehouseOwner() { return warehouseOwner; }
     public void setWarehouseOwner(String warehouseOwner) { this.warehouseOwner = warehouseOwner; }
+    public LocalDateTime getCreatedAt() { return createdAt; }
+    public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 }

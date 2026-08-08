@@ -1,5 +1,4 @@
 package com.intco.warehouse.service;
-import com.intco.warehouse.mapper.WarehouseMapper;
 
 import com.intco.warehouse.service.WarehouseImportService.ImportSummary;
 import java.io.ByteArrayOutputStream;
@@ -38,12 +37,12 @@ public class ImportExportService {
     private static final String AGE_SKU_SHEET = "\u5e93\u9f84SKU\u6c47\u603b";
     private final WarehouseImportService importService;
     private final WarehouseDataService dataService;
-    private final WarehouseMapper warehouseMapper;
+    private final EntityExportService entityExportService;
 
-    public ImportExportService(WarehouseImportService importService, WarehouseDataService dataService, WarehouseMapper warehouseMapper) {
+    public ImportExportService(WarehouseImportService importService, WarehouseDataService dataService, EntityExportService entityExportService) {
         this.importService = importService;
         this.dataService = dataService;
-        this.warehouseMapper = warehouseMapper;
+        this.entityExportService = entityExportService;
     }
 
     public ImportSummary importFile(MultipartFile file) throws IOException {
@@ -221,19 +220,7 @@ public class ImportExportService {
     }
 
     private List<Map<String, Object>> queryRows(Dataset dataset) {
-        if ("AGE_RULE".equals(dataset.query)) return warehouseMapper.exportInventoryAgeRules();
-        if ("AGE_BATCH".equals(dataset.query)) return warehouseMapper.exportInventoryAgeBatches();
-        if ("AGE_SKU".equals(dataset.query)) return warehouseMapper.exportInventoryAgeSkus();
-        switch (dataset.columns[0].technical) {
-            case "warehouse_id": return warehouseMapper.exportWarehouses();
-            case "warehouse_name": return warehouseMapper.exportInventory();
-            case "biz_date": return dataset.columns.length == 33 ? warehouseMapper.exportSkuDaily() : warehouseMapper.exportWarehouseDaily();
-            case "snapshot_date": return warehouseMapper.exportAreaSnapshots();
-            case "event_id": return warehouseMapper.exportExceptions();
-            case "project_no": return warehouseMapper.exportBom();
-            case "kpi_name": return warehouseMapper.exportTargets();
-            default: throw new IllegalArgumentException("???????");
-        }
+        return entityExportService.rows(dataset.query, dataset.columns[0].technical, dataset.columns.length);
     }
 
     private List<Dataset> datasets() {

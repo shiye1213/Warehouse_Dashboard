@@ -18,7 +18,8 @@ const clock = document.getElementById('clock');
 let second = 59;
 setInterval(() => {
   second = (second + 1) % 60;
-  clock.textContent = `2026-07-31 23:59:${String(second).padStart(2,'0')}`;
+  const businessDate = clock.dataset.bizDate || new Date().toISOString().slice(0, 10);
+  clock.textContent = `${businessDate} 23:59:${String(second).padStart(2,'0')}`;
 }, 1000);
 
 document.querySelectorAll('.in-icon').forEach((el) => { el.textContent = '\u5165\u5e93'; });
@@ -137,7 +138,11 @@ const nearestPoint = (points, svg, event) => {
 document.querySelectorAll('.ring-face-occupied, .ring-face-free').forEach((segment) => {
   segment.addEventListener('mouseenter', (event) => {
     const occupied = segment.classList.contains('ring-face-occupied');
-    showDataTooltip(`${occupied ? '已用库位' : '可用库位'} · ${occupied ? '844' : '116'} 个 · ${occupied ? '88%' : '12%'}`, event);
+    const ring = segment.closest('.ring-3d');
+    const count = occupied ? ring?.dataset.occupied : ring?.dataset.available;
+    const ratio = Number(ring?.dataset.occupancy || 0);
+    const percent = occupied ? ratio : 1 - ratio;
+    showDataTooltip(`${occupied ? '\u5df2\u7528\u5e93\u4f4d' : '\u53ef\u7528\u5e93\u4f4d'} \u00b7 ${Number(count || 0).toLocaleString()} \u4e2a \u00b7 ${(percent * 100).toFixed(1)}%`, event);
   });
   segment.addEventListener('mousemove', (event) => showDataTooltip(dataTooltip.textContent, event));
   segment.addEventListener('mouseleave', hideDataTooltip);
@@ -151,6 +156,7 @@ function buildLinePoints() {
     const baseY = svg.classList.contains('stock-chart') ? 110 : 120;
     const topY = 18;
     const series = line.classList.contains('purple-line') ? '出库' : line.classList.contains('mint-line') ? '库存' : '入库';
+    const rawValues = JSON.parse(line.dataset.values || '[]');
     points.forEach(([x, y], index) => {
       const point = document.createElementNS(svgNamespace, 'circle');
       point.setAttribute('class', `line-point ${series}`);
@@ -159,11 +165,11 @@ function buildLinePoints() {
       point.setAttribute('r', 3.2);
       point.addEventListener('mouseenter', (event) => {
         point.classList.add('is-hovered');
-        const value = Math.max(0, Math.round((baseY - y) / (baseY - topY) * maxValue));
+        const value = rawValues[index] ?? Math.max(0, Math.round((baseY - y) / (baseY - topY) * maxValue));
         showDataTooltip(`${series} · 第${index + 1}个数据点 · ${value.toLocaleString()}${maxValue >= 100000 ? '' : '单'}`, event);
       });
       point.addEventListener('mousemove', (event) => {
-        const value = Math.max(0, Math.round((baseY - y) / (baseY - topY) * maxValue));
+        const value = rawValues[index] ?? Math.max(0, Math.round((baseY - y) / (baseY - topY) * maxValue));
         showDataTooltip(`${series} · 第${index + 1}个数据点 · ${value.toLocaleString()}${maxValue >= 100000 ? '' : '单'}`, event);
       });
       point.addEventListener('mouseleave', () => { point.classList.remove('is-hovered'); hideDataTooltip(); });
@@ -199,6 +205,12 @@ function animateChartEntrance() {
   });
 }
 window.requestAnimationFrame(animateChartEntrance);
+window.addEventListener('box-warehouse:data-loaded', () => {
+  buildThreeDimensionalLines();
+  buildLinePoints();
+  animateChartEntrance();
+  animateValueCounts();
+});
 function animateTaskTables() {
   const panes = [];
   document.querySelectorAll('.task-pane table').forEach((table) => {

@@ -7,11 +7,10 @@ import {
   Warehouse,
 } from 'lucide-vue-next'
 import TrendChart from '../components/TrendChart.vue'
-import finishedGoodsSeed from '../data/finishedGoodsData'
 import { dashboardApi } from '../services/api'
 
 const router = useRouter()
-const finishedGoodsData = reactive(finishedGoodsSeed)
+const finishedGoodsData = reactive({ meta: {}, daily: [], zones: [], alerts: [], inventory: [], targets: [] })
 const daily = finishedGoodsData.daily
 const zones = finishedGoodsData.zones
 const animatedZoneOccupancy = ref(zones.map(() => 0))
@@ -19,6 +18,7 @@ let zoneAnimationFrame
 const refreshVersion = ref(0)
 const refreshing = ref(false)
 const showUpdated = ref(false)
+const loadError = ref('')
 let refreshTimer
 let updatedTimer
 
@@ -26,7 +26,7 @@ const alerts = finishedGoodsData.alerts
 const inventory = finishedGoodsData.inventory
 const targets = finishedGoodsData.targets
 const meta = finishedGoodsData.meta
-const latest = daily.at(-1)
+const latest = reactive({})
 
 function syncRows(target, source) {
   source.forEach((row, index) => {
@@ -40,6 +40,9 @@ async function loadFinishedGoods() {
   const data = await dashboardApi.getWarehouseSnapshot('WH-FG03', 31)
   Object.assign(meta, data.meta || {})
   syncRows(daily, data.daily || [])
+  syncRows(weekRows, daily.slice(-7))
+  syncRows(previousWeekRows, daily.slice(-14, -7))
+  Object.assign(yesterday, daily.at(-2) || {})
   syncRows(zones, data.zones || [])
   syncRows(alerts, data.alerts || [])
   syncRows(inventory, data.inventory || [])
@@ -54,6 +57,7 @@ async function triggerRefresh(initial = false) {
   window.clearTimeout(updatedTimer)
   refreshing.value = true
   showUpdated.value = false
+  loadError.value = ''
 
   try {
     await loadFinishedGoods()
@@ -67,6 +71,7 @@ async function triggerRefresh(initial = false) {
     }
   } catch (error) {
     console.error('加载成品库看板失败', error)
+    loadError.value = error instanceof Error ? error.message : String(error)
   } finally {
     refreshTimer = window.setTimeout(() => { refreshing.value = false }, initial ? 0 : 520)
   }
@@ -164,9 +169,9 @@ const todayOperations = computed(() => [
   { label: '加班工时', value: latest.overtimeHours, unit: '小时', icon: Users },
 ])
 
-const weekRows = daily.slice(-7)
-const previousWeekRows = daily.slice(-14, -7)
-const yesterday = daily.at(-2)
+const weekRows = reactive([])
+const previousWeekRows = reactive([])
+const yesterday = reactive({})
 const relative = (current, previous) => previous ? (current - previous) / previous : 0
 
 const businessSteps = computed(() => {
@@ -415,7 +420,7 @@ function openNavigation() {
           <i />
           <div><span>最新快照</span><strong>{{ meta.latestDate }}</strong></div>
           <button class="source-sync" type="button" :disabled="refreshing" aria-label="刷新成品库看板数据" @click="triggerRefresh()">
-            <i class="source-live-dot" /><RefreshCw :size="13" /><span>{{ refreshing ? '正在刷新' : '数据已同步' }}</span>
+            <i class="source-live-dot" /><RefreshCw :size="13" /><span>{{ loadError ? '数据库连接失败' : refreshing ? '正在刷新' : '数据已同步' }}</span>
           </button>
         </div>
       </header>
