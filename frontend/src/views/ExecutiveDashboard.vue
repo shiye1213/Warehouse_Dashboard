@@ -7,11 +7,10 @@ import {
   Warehouse,
 } from 'lucide-vue-next'
 import TrendChart from '../components/TrendChart.vue'
-import finishedGoodsSeed from '../data/finishedGoodsData'
 import { dashboardApi } from '../services/api'
 
 const router = useRouter()
-const finishedGoodsData = reactive(finishedGoodsSeed)
+const finishedGoodsData = reactive({ meta: {}, daily: [], zones: [], alerts: [], inventory: [], targets: [] })
 const daily = finishedGoodsData.daily
 const zones = finishedGoodsData.zones
 const animatedZoneOccupancy = ref(zones.map(() => 0))
@@ -19,6 +18,7 @@ let zoneAnimationFrame
 const refreshVersion = ref(0)
 const refreshing = ref(false)
 const showUpdated = ref(false)
+const loadError = ref('')
 let refreshTimer
 let updatedTimer
 
@@ -26,7 +26,7 @@ const alerts = finishedGoodsData.alerts
 const inventory = finishedGoodsData.inventory
 const targets = finishedGoodsData.targets
 const meta = finishedGoodsData.meta
-const latest = daily.at(-1)
+const latest = reactive({})
 
 function syncRows(target, source) {
   source.forEach((row, index) => {
@@ -40,6 +40,9 @@ async function loadFinishedGoods() {
   const data = await dashboardApi.getWarehouseSnapshot('WH-FG03', 31)
   Object.assign(meta, data.meta || {})
   syncRows(daily, data.daily || [])
+  syncRows(weekRows, daily.slice(-7))
+  syncRows(previousWeekRows, daily.slice(-14, -7))
+  Object.assign(yesterday, daily.at(-2) || {})
   syncRows(zones, data.zones || [])
   syncRows(alerts, data.alerts || [])
   syncRows(inventory, data.inventory || [])
@@ -54,6 +57,7 @@ async function triggerRefresh(initial = false) {
   window.clearTimeout(updatedTimer)
   refreshing.value = true
   showUpdated.value = false
+  loadError.value = ''
 
   try {
     await loadFinishedGoods()
@@ -67,6 +71,7 @@ async function triggerRefresh(initial = false) {
     }
   } catch (error) {
     console.error('加载成品库看板失败', error)
+    loadError.value = error instanceof Error ? error.message : String(error)
   } finally {
     refreshTimer = window.setTimeout(() => { refreshing.value = false }, initial ? 0 : 520)
   }
@@ -149,9 +154,9 @@ const inventorySummary = computed(() => ({
 const metricCards = computed(() => [
   { label: '当日成品入库量', value: latest.inbound, unit: '箱', note: latest.inboundOrders + ' 张入库单', icon: PackageCheck, tone: 'cyan', path: '/operations' },
   { label: '当日成品出库量', value: latest.outbound, unit: '箱', note: latest.outboundOrders + ' 张出库单', icon: Truck, tone: 'blue', path: '/operations' },
-  { label: '平均库存准确率', value: formatPercent(average(daily, 'inventoryAccuracy')), unit: '', note: '目标 98.0%', icon: ShieldCheck, tone: 'cyan', path: '/performance' },
-  { label: '平均出库及时率', value: formatPercent(average(daily, 'deliveryTimely')), unit: '', note: '目标 94.0%', icon: Clock3, tone: 'blue', path: '/performance' },
-  { label: '最新库区占用率', value: formatPercent(zoneOccupancy.value), unit: '', note: zoneOccupied.value + ' / ' + zoneCapacity.value + ' 库位', icon: Layers3, tone: zoneOccupancy.value >= .85 ? 'danger' : 'cyan', path: '/zones' },
+  { label: '平均库存准确率', value: formatPercent(average(daily, 'inventoryAccuracy')), unit: '', note: '目标 ' + formatPercent(target('库存准确率')), icon: ShieldCheck, tone: 'cyan', path: '/performance' },
+  { label: '平均出库及时率', value: formatPercent(average(daily, 'deliveryTimely')), unit: '', note: '目标 ' + formatPercent(target('出库及时率')), icon: Clock3, tone: 'blue', path: '/performance' },
+  { label: '最新库区占用率', value: formatPercent(zoneOccupancy.value), unit: '', note: zoneOccupied.value + ' / ' + zoneCapacity.value + ' 库位', icon: Layers3, tone: zoneOccupancy.value >= Number(target('库区占用率') || 1) ? 'danger' : 'cyan', path: '/zones' },
   { label: '未关闭异常', value: openAlerts.value.length, unit: '条', note: '异常关闭率 ' + formatPercent(closeRate.value, 0), icon: AlertTriangle, tone: openAlerts.value.length ? 'danger' : 'cyan', path: '/exceptions' },
 ])
 
@@ -164,16 +169,17 @@ const todayOperations = computed(() => [
   { label: '加班工时', value: latest.overtimeHours, unit: '小时', icon: Users },
 ])
 
-const weekRows = daily.slice(-7)
-const previousWeekRows = daily.slice(-14, -7)
-const yesterday = daily.at(-2)
+const weekRows = reactive([])
+const previousWeekRows = reactive([])
+const yesterday = reactive({})
 const relative = (current, previous) => previous ? (current - previous) / previous : 0
 
 const businessSteps = computed(() => {
+  if (!weekRows.length || !targets.length) return []
   const weekPeak = (key) => Math.max(...weekRows.map((row) => Number(row[key] || 0)), 1)
-  const receivingTarget = target('入库及时率') || 0.95
-  const pickingTarget = target('平均拣货时长') || 45
-  const deliveryTarget = target('出库及时率') || 0.94
+  const receivingTarget = target('入库及时率')
+  const pickingTarget = target('平均拣货时长')
+  const deliveryTarget = target('出库及时率')
 
   return [
     {
@@ -264,6 +270,7 @@ function target(name) {
 }
 
 const kpis = computed(() => {
+  if (!daily.length || !targets.length) return []
   const rows = [
     { name: '库存准确率', value: average(daily, 'inventoryAccuracy'), target: target('库存准确率'), unit: '%', lowerBetter: false },
     { name: '入库及时率', value: average(daily, 'receivingTimely'), target: target('入库及时率'), unit: '%', lowerBetter: false },
@@ -388,7 +395,7 @@ function severityTone(severity) {
 }
 
 function open(path) {
-  router.push({ path, query: { warehouse: '成品库' } })
+  router.push({ path, query: { warehouse: meta.warehouseName || '成品库' } })
 }
 
 function openNavigation() {
@@ -403,7 +410,7 @@ function openNavigation() {
         <div class="finished-brand">
           <button class="finished-menu" type="button" aria-label="打开主导航" @click="openNavigation"><Menu :size="19" /></button>
           <div class="finished-logo"><Warehouse :size="26" /></div>
-          <div><strong>WH-FG03</strong><span>FINISHED GOODS</span></div>
+          <div><strong>{{ meta.warehouseId || '—' }}</strong><span>{{ meta.warehouseName || 'FINISHED GOODS' }}</span></div>
         </div>
         <div class="finished-title">
           <p>FINISHED GOODS OPERATION DASHBOARD</p>
@@ -415,7 +422,7 @@ function openNavigation() {
           <i />
           <div><span>最新快照</span><strong>{{ meta.latestDate }}</strong></div>
           <button class="source-sync" type="button" :disabled="refreshing" aria-label="刷新成品库看板数据" @click="triggerRefresh()">
-            <i class="source-live-dot" /><RefreshCw :size="13" /><span>{{ refreshing ? '正在刷新' : '数据已同步' }}</span>
+            <i class="source-live-dot" /><RefreshCw :size="13" /><span>{{ loadError ? '数据库连接失败' : refreshing ? '正在刷新' : '数据已同步' }}</span>
           </button>
         </div>
       </header>
@@ -435,7 +442,7 @@ function openNavigation() {
       <div class="finished-grid verified-grid">
         <aside class="board-column verified-left">
           <article class="blue-panel source-trend-card" @click="open('/operations')">
-            <header class="panel-heading"><div><span>01</span><h2>31 天成品入出库趋势</h2></div><small>单位：箱</small></header>
+            <header class="panel-heading"><div><span>01</span><h2>{{ daily.length }} 天成品入出库趋势</h2></div><small>单位：箱</small></header>
             <TrendChart :key="'main-trend-' + refreshVersion" class="finished-trend" :rows="daily" :series="trendSeries" :height="190" draw-animation latest-pulse />
           </article>
 
@@ -480,7 +487,10 @@ function openNavigation() {
                     <div class="business-mini-chart">
                       <span>{{ step.trendLabel }}（近7日）</span>
                       <TrendChart :key="step.code + '-' + refreshVersion" :rows="step.trendRows" :series="step.trendSeries" :height="64" :show-legend="false" compact draw-animation />
-                      <small><i>{{ step.trendRows[0].date.slice(5).replace('-', '/') }}</i><i>{{ step.trendRows.at(-1).date.slice(5).replace('-', '/') }}</i></small>
+                      <small>
+                        <i>{{ step.trendRows[0]?.date?.slice(5).replace('-', '/') || '—' }}</i>
+                        <i>{{ step.trendRows.at(-1)?.date?.slice(5).replace('-', '/') || '—' }}</i>
+                      </small>
                     </div>
                     <div class="business-stat-grid">
                       <div v-for="metric in step.metrics" :key="metric.label"><span>{{ metric.label }}</span><strong>{{ metric.value }}</strong></div>

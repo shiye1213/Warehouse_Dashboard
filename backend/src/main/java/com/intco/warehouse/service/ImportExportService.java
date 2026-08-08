@@ -26,21 +26,23 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 @Service
 public class ImportExportService {
     private static final String XLSX_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    private static final String AGE_RULE_SHEET = "\u5e93\u9f84\u89c4\u5219";
+    private static final String AGE_BATCH_SHEET = "\u5e93\u9f84\u6279\u6b21\u660e\u7ec6";
+    private static final String AGE_SKU_SHEET = "\u5e93\u9f84SKU\u6c47\u603b";
     private final WarehouseImportService importService;
     private final WarehouseDataService dataService;
-    private final JdbcTemplate jdbc;
+    private final EntityExportService entityExportService;
 
-    public ImportExportService(WarehouseImportService importService, WarehouseDataService dataService, JdbcTemplate jdbc) {
+    public ImportExportService(WarehouseImportService importService, WarehouseDataService dataService, EntityExportService entityExportService) {
         this.importService = importService;
         this.dataService = dataService;
-        this.jdbc = jdbc;
+        this.entityExportService = entityExportService;
     }
 
     public ImportSummary importFile(MultipartFile file) throws IOException {
@@ -72,7 +74,7 @@ public class ImportExportService {
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             if (template) writeInstructions(workbook);
             for (Dataset dataset : datasets()) {
-                List<Map<String, Object>> rows = template ? new ArrayList<>() : jdbc.queryForList(dataset.query);
+                List<Map<String, Object>> rows = template ? new ArrayList<>() : queryRows(dataset);
                 writeDataset(workbook, dataset, rows);
             }
             workbook.setActiveSheet(0);
@@ -89,7 +91,7 @@ public class ImportExportService {
             csv.append(dataset.columns[i].technical);
         }
         csv.append("\r\n");
-        for (Map<String, Object> row : jdbc.queryForList(dataset.query)) {
+        for (Map<String, Object> row : queryRows(dataset)) {
             for (int i = 0; i < dataset.columns.length; i++) {
                 if (i > 0) csv.append(',');
                 Object value = get(row, dataset.columns[i].technical);
@@ -103,7 +105,7 @@ public class ImportExportService {
     private void writeInstructions(Workbook workbook) {
         Sheet sheet = workbook.createSheet("导入说明");
         sheet.createRow(0).createCell(0).setCellValue("仓库运营数据导入模板");
-        sheet.createRow(2).createCell(0).setCellValue("1. 完整 Excel 导入必须保留全部 8 个数据工作表及第 3 行技术字段名。数据会在单个事务中校验并替换。 ");
+        sheet.createRow(2).createCell(0).setCellValue("1. 完整 Excel 导入必须保留全部 11 个数据工作表及第 3 行技术字段名。数据会在单个事务中校验并替换。 ");
         sheet.createRow(3).createCell(0).setCellValue("2. 日期使用 yyyy-MM-dd，时间使用 yyyy-MM-dd HH:mm:ss，百分比可填写 0.98 或 98%。");
         sheet.createRow(4).createCell(0).setCellValue("3. CSV 仅用于仓库日指标，字段名使用运营_仓库每日指标中的技术字段名。");
         sheet.setColumnWidth(0, 110 * 256);
@@ -217,32 +219,38 @@ public class ImportExportService {
         CellStyle style = workbook.createCellStyle(); style.setDataFormat(workbook.createDataFormat().getFormat(format)); return style;
     }
 
+    private List<Map<String, Object>> queryRows(Dataset dataset) {
+        return entityExportService.rows(dataset.query, dataset.columns[0].technical, dataset.columns.length);
+    }
+
     private List<Dataset> datasets() {
-        return Arrays.asList(warehouseDataset(), inventoryDataset(), skuDailyDataset(), warehouseDailyDataset(), areaDataset(), exceptionDataset(), bomDataset(), targetDataset());
+        return Arrays.asList(warehouseDataset(), inventoryDataset(), skuDailyDataset(), warehouseDailyDataset(),
+                areaDataset(), exceptionDataset(), bomDataset(), targetDataset(),
+                inventoryAgeRuleDataset(), inventoryAgeBatchDataset(), inventoryAgeSkuDataset());
     }
 
     private Dataset warehouseDataset() {
         return new Dataset("仓库主数据", "仓库主数据", "三个运营看板共用的仓库筛选与容量主数据。",
-                "SELECT warehouse_id,warehouse_name,warehouse_type,area_count,capacity_locations,warehouse_owner FROM warehouse ORDER BY warehouse_id",
+                "WAREHOUSE",
                 c("warehouse_id", "仓库编码"), c("warehouse_name", "仓库名称"), c("warehouse_type", "仓库类型"), c("area_count", "库区数量"), c("capacity_locations", "容量库位数"), c("warehouse_owner", "仓库负责人"));
     }
 
     private Dataset inventoryDataset() {
         return new Dataset("现存量快照", "现存量快照", "按仓库、项目、物料和库存日期保存的数量快照。",
-                "SELECT warehouse_name,material_code,material_name,project_no,customer_item,project_material_sku,product_index_no,glove_size,color_code,main_uom,specification,model,on_hand_main_qty,reserved_main_qty,frozen_main_qty,vendor_owned_on_hand_main_qty,stock_date FROM inventory_snapshot ORDER BY warehouse_id,project_no,material_code",
+                "INVENTORY",
                 c("warehouse_name","仓库名称"),c("material_code","物料编码"),c("material_name","物料名称"),c("project_no","项目号"),c("customer_item","客户 ITEM"),c("project_material_sku","项目物料 SKU"),c("product_index_no","产品索引号"),c("glove_size","手套型号"),c("color_code","颜色代码"),c("main_uom","主计量单位"),c("specification","规格"),c("model","型号"),c("on_hand_main_qty","结存主数量"),c("reserved_main_qty","预留主数量"),c("frozen_main_qty","冻结主数量"),c("vendor_owned_on_hand_main_qty","供应商物权结存主数量"),c("stock_date","库存日期"));
     }
 
     private Dataset skuDailyDataset() {
         String[] names = {"biz_date|业务日期","warehouse_id|仓库编码","warehouse_name|仓库名称","warehouse_type|仓库类型","warehouse_role|仓库业务角色","project_no|项目号","project_name|项目名称","material_code|物料编码","material_name|物料名称","project_material_sku|项目物料 SKU","warehouse_sku_key|仓库项目物料键","material_category|物料分类","color|颜色","model|型号","uom|计量单位","packaging_level|包材层级","area_id|库区编码","area_name|库区名称","inbound_order_count|入库单数","inbound_line_count|入库行项目数","inbound_qty|入库数量","outbound_order_count|出库单数","outbound_line_count|出库行项目数","outbound_qty|出库数量","picking_task_count|拣货任务数","forklift_task_count|叉车任务数","inventory_accuracy|库存准确率%","receipt_timely_rate|入库及时率%","delivery_timely_rate|出库及时率%","avg_receipt_minutes|平均收货时长","avg_picking_minutes|平均拣货时长","exception_count|异常数","avg_outbound_lead_days|成品平均周转天数"};
         return new Dataset("运营_SKU日指标", "运营_SKU日指标", "原子事实表，粒度为业务日期 + 仓库 + 项目 + 物料。",
-                "SELECT * FROM sku_daily_metric ORDER BY biz_date,warehouse_id,project_no,material_code", columns(names));
+                "SKU_DAILY", columns(names));
     }
 
     private Dataset warehouseDailyDataset() {
         String[] names = {"biz_date|业务日期","warehouse_id|仓库编码","warehouse_name|仓库名称","warehouse_type|仓库类型","inbound_order_count|入库单数","outbound_order_count|出库单数","raw_inbound_ton|原材料入库量（吨）","raw_outbound_ton|原材料领用量（吨）","finished_inbound_carton|成品入库量（箱）","finished_outbound_carton|成品出库量（箱）","packaging_inbound_piece|包材入库量（个）","packaging_outbound_piece|包材领用量（个）","picking_task_count|拣货任务数","forklift_task_count|叉车任务数","inventory_accuracy|库存准确率%","receipt_timely_rate|入库及时率%","delivery_timely_rate|出库及时率%","exception_count|异常数","avg_receipt_minutes|平均收货时长","avg_picking_minutes|平均拣货时长","dock_utilization_rate|月台利用率%","overtime_hours|加班工时"};
         return new Dataset("运营_仓库每日指标", "运营_仓库每日指标", "三个仓库按日汇总的作业、时效、异常和资源指标。",
-                "SELECT * FROM warehouse_daily_metric ORDER BY biz_date,warehouse_id", columns(names));
+                "WAREHOUSE_DAILY", columns(names));
     }
 
     private Dataset areaDataset() {
@@ -263,6 +271,46 @@ public class ImportExportService {
     private Dataset targetDataset() {
         return new Dataset("运营_KPI目标", "运营_KPI目标", "KPI 目标、预警方向、计算口径与来源。", "SELECT * FROM kpi_target ORDER BY kpi_name",
                 c("kpi_name","KPI 名称"),c("target_value","目标值"),c("unit","单位"),c("warning_rule","预警规则"),c("calculation_definition","计算口径"),c("data_source","数据来源"));
+    }
+
+    private Dataset inventoryAgeRuleDataset() {
+        String[] names = {"rule_type","rule_name","rule_condition","result_level","action_guidance","applicable_scope"};
+        return new Dataset(AGE_RULE_SHEET, AGE_RULE_SHEET, "Inventory aging and stagnation rules.",
+                "AGE_RULE", technicalColumns(names));
+    }
+
+    private Dataset inventoryAgeBatchDataset() {
+        String[] names = {
+                "snapshot_date","age_batch_id","warehouse_id","warehouse_name","warehouse_type",
+                "project_no","project_name","material_code","material_name","project_material_sku",
+                "material_category","color","model","uom","batch_no","receipt_date","age_days","age_bucket",
+                "batch_on_hand_qty","batch_reserved_qty","batch_frozen_qty","available_qty","unit_cost",
+                "inventory_amount","last_outbound_date","days_since_last_outbound","outbound_qty_30d",
+                "outbound_rate_30d","coverage_days","movement_status","stagnant_level","is_stagnant",
+                "stagnant_score","priority","recommended_action","owner","data_source"
+        };
+        return new Dataset(AGE_BATCH_SHEET, AGE_BATCH_SHEET, "Batch-level inventory aging details.",
+                "AGE_BATCH", technicalColumns(names));
+    }
+
+    private Dataset inventoryAgeSkuDataset() {
+        String[] names = {
+                "snapshot_date","warehouse_id","warehouse_name","warehouse_type","project_no","project_name",
+                "material_code","material_name","project_material_sku","material_category","color","model","uom",
+                "batch_count","on_hand_qty","available_qty","inventory_amount","weighted_avg_age_days",
+                "max_age_days","dominant_age_bucket","outbound_qty_30d","outbound_rate_30d",
+                "latest_sku_outbound_date","days_since_last_sku_outbound","stagnant_batch_count",
+                "stagnant_inventory_amount","stagnation_ratio","stagnant_level","is_stagnant",
+                "stagnant_score","priority","recommended_action","owner"
+        };
+        return new Dataset(AGE_SKU_SHEET, AGE_SKU_SHEET, "SKU-level inventory aging summary.",
+                "AGE_SKU", technicalColumns(names));
+    }
+
+    private static Column[] technicalColumns(String[] names) {
+        Column[] result = new Column[names.length];
+        for (int i = 0; i < names.length; i++) result[i] = c(names[i], names[i]);
+        return result;
     }
 
     private static Column[] columns(String[] definitions) {

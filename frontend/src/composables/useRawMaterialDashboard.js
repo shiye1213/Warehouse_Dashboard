@@ -1,9 +1,8 @@
-import { computed, ref } from 'vue'
-import rawMaterialSnapshot from '../data/raw-material-dashboard.json'
+import { computed, onMounted, ref } from 'vue'
 import { dashboardApi } from '../services/api'
 import { registerProjectRefresh } from './useProjectRefresh'
 
-const snapshot = ref(rawMaterialSnapshot)
+const snapshot = ref(null)
 const loading = ref(false)
 const error = ref('')
 let pendingRefresh
@@ -30,6 +29,7 @@ function refresh() {
 registerProjectRefresh('raw-material-dashboard', refresh)
 
 export function useRawMaterialDashboard() {
+  onMounted(() => refresh().catch(() => {}))
   return {
     snapshot,
     loading: computed(() => loading.value),

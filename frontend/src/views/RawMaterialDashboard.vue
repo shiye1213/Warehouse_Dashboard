@@ -43,6 +43,14 @@ const summary = computed(() => snapshot.value?.summary || {})
 const trend = computed(() => snapshot.value?.trend || [])
 const zones = computed(() => snapshot.value?.zones || [])
 const stocks = computed(() => snapshot.value?.stocks || [])
+const targets = computed(() => snapshot.value?.targets || [])
+const historyDayCount = computed(() => Math.max(trend.value.length, 1))
+const dataMonthLabel = computed(() => {
+  const latestDate = String(snapshot.value?.meta?.latestDate || '')
+  const month = Number(latestDate.slice(5, 7))
+  return month ? month + ' 月' : '本期'
+})
+const targetMap = computed(() => new Map(targets.value.map((item) => [item.key, item])))
 const rankedZones = computed(() => [...zones.value].sort((a, b) => Number(b.occupancy || 0) - Number(a.occupancy || 0)))
 const severityRank = { '紧急': 3, '重要': 2, '一般': 1 }
 const alerts = computed(() => [...(snapshot.value?.openExceptions || [])]
@@ -66,11 +74,8 @@ const netInventoryChange = computed(() => Number(summary.value.monthRawInbound |
 const todayFlowBalance = computed(() => Number(summary.value.todayRawInbound || 0) - Number(summary.value.todayRawOutbound || 0))
 const monthOrderTotal = computed(() => Number(summary.value.monthInboundOrders || 0) + Number(summary.value.monthOutboundOrders || 0))
 const monthHandlingTotal = computed(() => Number(summary.value.monthPickingTasks || 0) + Number(summary.value.monthForkliftTasks || 0))
-const monthDailyOrders = computed(() => Math.round(monthOrderTotal.value / 31))
-const monthDailyHandling = computed(() => Math.round(monthHandlingTotal.value / 31))
-const avgAlertAgeHours = computed(() => alerts.value.length
-  ? alerts.value.reduce((total, alert) => total + Number(alert.durationHours || 0), 0) / alerts.value.length
-  : 0)
+const monthDailyOrders = computed(() => Math.round(monthOrderTotal.value / historyDayCount.value))
+const monthDailyHandling = computed(() => Math.round(monthHandlingTotal.value / historyDayCount.value))
 const latestFlowComparison = computed(() => {
   const current = trend.value.at(-1) || {}
   const previous = trend.value.at(-2) || {}
@@ -81,30 +86,26 @@ const latestFlowComparison = computed(() => {
   }
 })
 
-const tankProfiles = {
-  '210300000771': { id: 'RM-T01', capacityTon: 160, density: 0.86, materialForm: 'powder', materialFormLabel: '粉料' },
-  '210100000792': { id: 'RM-T02', capacityTon: 120, density: 0.72, materialForm: 'granule', materialFormLabel: '颗粒' },
-  '210100000793': { id: 'RM-T03', capacityTon: 120, density: 0.65, materialForm: 'roll', materialFormLabel: '卷材' },
-  '210100000781': { id: 'RM-T04', capacityTon: 100, density: 1.02, materialForm: 'liquid', materialFormLabel: '液体' },
+function materialVisual(stock) {
+  const text = String(stock.name || '') + ' ' + String(stock.specification || '')
+  if (text.includes('粉')) return { materialForm: 'powder', materialFormLabel: '粉料' }
+  if (text.includes('膜') || text.includes('卷')) return { materialForm: 'roll', materialFormLabel: '卷材' }
+  if (text.includes('乳胶') || text.includes('液')) return { materialForm: 'liquid', materialFormLabel: '液体' }
+  return { materialForm: 'granule', materialFormLabel: '颗粒' }
 }
-
+const totalMaterialInventory = computed(() => stocks.value.reduce((total, stock) => total + Number(stock.onHand || 0), 0))
 const materialTanks = computed(() => stocks.value.map((stock, index) => {
-  const profile = tankProfiles[stock.code] || {
-    id: `RM-T${String(index + 1).padStart(2, '0')}`,
-    capacityTon: Math.ceil(Number(stock.onHand || 0) / 10) * 10,
-    density: 0.75,
-    materialForm: 'granule',
-    materialFormLabel: '固体',
-  }
-  const fillRate = Math.min(Number(stock.onHand || 0) / profile.capacityTon, 1)
+  const onHand = Number(stock.onHand || 0)
+  const available = Number(stock.available || 0)
+  const frozen = Number(stock.frozen || 0)
   return {
     ...stock,
-    ...profile,
-    fillRate,
-    state: fillRate >= 0.85 ? '高位' : fillRate <= 0.25 ? '低位' : '正常',
+    ...materialVisual(stock),
+    id: stock.code || 'RM-' + String(index + 1).padStart(2, '0'),
+    fillRate: totalMaterialInventory.value ? onHand / totalMaterialInventory.value : 0,
+    state: frozen > 0 ? '有冻结' : onHand && available / onHand < 0.9 ? '预留偏高' : '正常',
   }
 }))
-
 const flowSeries = computed(() => {
   return [
     { name: '原料入库', key: 'rawInbound', color: '#14d8d0', area: true, symbol: 'circle', lineWidth: 2.8 },
@@ -112,43 +113,27 @@ const flowSeries = computed(() => {
   ]
 })
 
+function targetValue(key) {
+  return Number(targetMap.value.get(key)?.target || 0)
+}
+function meetsTarget(key, value) {
+  const target = targetMap.value.get(key)
+  if (!target) return true
+  const current = Number(value || 0)
+  return target.direction === 'max' ? current <= Number(target.target) : current >= Number(target.target)
+}
+function targetNote(key) {
+  const target = targetMap.value.get(key)
+  if (!target) return '目标未配置'
+  const operator = target.direction === 'max' ? '≤' : '≥'
+  const value = target.unit === '%' ? formatPercent(target.target) : (formatInteger(target.target) + ' ' + (target.unit || '')).trim()
+  return '目标 ' + operator + ' ' + value
+}
 const riskTargetRows = computed(() => [
-  {
-    key: 'occupancy',
-    name: '库区占用率',
-    value: summary.value.occupancy,
-    formatter: formatPercent,
-    unit: '',
-    target: '目标 ≤ 85%',
-    met: Number(summary.value.occupancy || 0) <= 0.85,
-  },
-  {
-    key: 'openExceptions',
-    name: '未关闭异常',
-    value: summary.value.openExceptions,
-    formatter: formatInteger,
-    unit: ' 项',
-    target: '目标 ≤ 10 项',
-    met: Number(summary.value.openExceptions || 0) <= 10,
-  },
-  {
-    key: 'exceptionCloseRate',
-    name: '异常关闭率',
-    value: summary.value.exceptionCloseRate,
-    formatter: formatPercent,
-    unit: '',
-    target: '目标 ≥ 90%',
-    met: Number(summary.value.exceptionCloseRate || 0) >= 0.9,
-  },
-  {
-    key: 'avgAlertAge',
-    name: '平均未闭环时长',
-    value: avgAlertAgeHours.value,
-    formatter: formatOneDecimal,
-    unit: ' 小时',
-    target: '目标 ≤ 48 小时',
-    met: avgAlertAgeHours.value <= 48,
-  },
+  { key: 'occupancy', name: targetMap.value.get('occupancy')?.name || '库区占用率', value: summary.value.occupancy, formatter: formatPercent, unit: '', target: targetNote('occupancy'), met: meetsTarget('occupancy', summary.value.occupancy) },
+  { key: 'openExceptions', name: targetMap.value.get('openExceptions')?.name || '未关闭异常', value: summary.value.openExceptions, formatter: formatInteger, unit: ' 项', target: targetNote('openExceptions'), met: meetsTarget('openExceptions', summary.value.openExceptions) },
+  { key: 'exceptionCloseRate', name: targetMap.value.get('exceptionCloseRate')?.name || '异常关闭率', value: summary.value.exceptionCloseRate, formatter: formatPercent, unit: '', target: targetNote('exceptionCloseRate'), met: meetsTarget('exceptionCloseRate', summary.value.exceptionCloseRate) },
+  { key: 'inventoryAccuracy', name: targetMap.value.get('inventoryAccuracy')?.name || '库存准确率', value: summary.value.inventoryAccuracy, formatter: formatPercent, unit: '', target: targetNote('inventoryAccuracy'), met: meetsTarget('inventoryAccuracy', summary.value.inventoryAccuracy) },
 ])
 
 function formatTon(value, digits = 3) {
@@ -161,10 +146,6 @@ function formatInteger(value) {
 
 function formatOneDecimal(value) {
   return Number(value || 0).toFixed(1)
-}
-
-function formatTwoDecimals(value) {
-  return Number(value || 0).toFixed(2)
 }
 
 function formatSignedDecimal(value) {
@@ -355,11 +336,11 @@ onBeforeUnmount(() => {
             <span class="raw-kpi-icon mint round"><ArrowUpFromLine /></span>
             <div><small>今日生产领用</small><strong><AnimatedNumber :value="summary.todayRawOutbound" :formatter="formatTon" :animation-key="refreshVersion" /><em>吨</em></strong><p>较昨日 <b class="positive"><AnimatedNumber :value="latestFlowComparison.outbound" :formatter="formatSignedPercent" :animation-key="refreshVersion" /></b></p></div>
           </article>
-          <article class="raw-kpi-card" :class="{ 'is-warning': Number(summary.occupancy || 0) > 0.85 }" role="link" tabindex="0" aria-label="查看库区占用明细" @click="navigateTo('/zones')" @keydown.enter.self="navigateTo('/zones')" @keydown.space.self.prevent="navigateTo('/zones')">
+          <article class="raw-kpi-card" :class="{ 'is-warning': !meetsTarget('occupancy', summary.occupancy) }" role="link" tabindex="0" aria-label="查看库区占用明细" @click="navigateTo('/zones')" @keydown.enter.self="navigateTo('/zones')" @keydown.space.self.prevent="navigateTo('/zones')">
             <span class="raw-kpi-icon amber"><Layers3 /></span>
-            <div><small>库区占用率</small><strong><AnimatedNumber :value="summary.occupancy" :formatter="formatPercent" :animation-key="refreshVersion" /></strong><p>较警戒线 <b class="warning"><AnimatedNumber :value="(Number(summary.occupancy || 0) - 0.85) * 100" :formatter="formatSignedDecimal" :animation-key="refreshVersion" /> 个百分点</b></p></div>
+            <div><small>库区占用率</small><strong><AnimatedNumber :value="summary.occupancy" :formatter="formatPercent" :animation-key="refreshVersion" /></strong><p>较数据库目标 <b class="warning"><AnimatedNumber :value="(Number(summary.occupancy || 0) - targetValue('occupancy')) * 100" :formatter="formatSignedDecimal" :animation-key="refreshVersion" /> 个百分点</b></p></div>
           </article>
-          <article class="raw-kpi-card" :class="{ 'is-danger': Number(summary.openExceptions || 0) > 10 }" role="link" tabindex="0" aria-label="查看异常明细" @click="navigateTo('/exceptions')" @keydown.enter.self="navigateTo('/exceptions')" @keydown.space.self.prevent="navigateTo('/exceptions')">
+          <article class="raw-kpi-card" :class="{ 'is-danger': !meetsTarget('openExceptions', summary.openExceptions) }" role="link" tabindex="0" aria-label="查看异常明细" @click="navigateTo('/exceptions')" @keydown.enter.self="navigateTo('/exceptions')" @keydown.space.self.prevent="navigateTo('/exceptions')">
             <span class="raw-kpi-icon rose"><AlertTriangle /></span>
             <div><small>未关闭异常</small><strong><AnimatedNumber :value="summary.openExceptions" :formatter="formatInteger" :animation-key="refreshVersion" /><em>项</em></strong><p>SLA 超时 <b class="danger"><AnimatedNumber :value="summary.slaBreached" :formatter="formatInteger" :animation-key="refreshVersion" /> 条</b></p></div>
           </article>
@@ -368,28 +349,28 @@ onBeforeUnmount(() => {
         <div class="raw-board-grid">
           <article class="raw-panel raw-flow-panel" role="link" tabindex="0" aria-label="查看原料收发详情" @click="navigateTo('/operations')" @keydown.enter.self="navigateTo('/operations')" @keydown.space.self.prevent="navigateTo('/operations')">
             <span class="raw-panel-accent" />
-            <header class="raw-panel-title split"><h2>近 31 日原料收发趋势 <CircleHelp /></h2><p>单位：吨</p></header>
+            <header class="raw-panel-title split"><h2>近 {{ historyDayCount }} 日原料收发趋势 <CircleHelp /></h2><p>单位：吨</p></header>
             <div class="raw-today-pair">
-              <div><span>7 月累计入库</span><strong><AnimatedNumber :value="summary.monthRawInbound" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
-              <div><span>7 月累计领用</span><strong><AnimatedNumber :value="summary.monthRawOutbound" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
+              <div><span>{{ dataMonthLabel }}累计入库</span><strong><AnimatedNumber :value="summary.monthRawInbound" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
+              <div><span>{{ dataMonthLabel }}累计领用</span><strong><AnimatedNumber :value="summary.monthRawOutbound" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
               <div><span>净变化</span><strong><AnimatedNumber :value="netInventoryChange" :formatter="formatSignedTon" :animation-key="refreshVersion" /></strong><small>吨</small><em>较昨日</em></div>
             </div>
             <TrendChart :key="refreshVersion" class="raw-trend-chart" :rows="trend" :series="flowSeries" :height="220" :show-axis-unit="false" category-boundary-gap nice-y-axis :y-axis-split-number="6" :y-axis-max="1.2" :y-axis-interval="0.2" :axis-bottom="15" :x-axis-label-margin="10" unit="吨" />
             <div class="raw-flow-foot"><span>月度净补库</span><strong><AnimatedNumber :value="netInventoryChange" :formatter="formatSignedTon" :animation-key="refreshVersion" /> 吨</strong><em>今日净变化 <AnimatedNumber :value="todayFlowBalance" :formatter="formatSignedTon" :animation-key="refreshVersion" /> 吨</em></div>
           </article>
 
-          <article class="raw-panel raw-posture-panel" role="link" tabindex="0" aria-label="查看全部储罐" @click="navigateTo('/zones')" @keydown.enter.self="navigateTo('/zones')" @keydown.space.self.prevent="navigateTo('/zones')">
+          <article class="raw-panel raw-posture-panel" role="link" tabindex="0" aria-label="查看原料库存结构" @click="navigateTo('/zones')" @keydown.enter.self="navigateTo('/zones')" @keydown.space.self.prevent="navigateTo('/zones')">
             <span class="raw-panel-accent centered-accent" />
-            <header class="raw-panel-title split"><h2>原料库实时储罐状态 <CircleHelp /></h2><div class="raw-panel-head-actions"><p><AnimatedNumber :value="snapshot?.meta?.areaCount" :formatter="formatInteger" :animation-key="refreshVersion" /> 个罐区 · 低位 ≤25% · 高位 ≥85% · <b>在线 <AnimatedNumber :value="materialTanks.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 台</b></p></div></header>
-            <div class="raw-silo-overview" :aria-label="`${materialTanks.length} 个原料筒实时存量概况`">
+            <header class="raw-panel-title split"><h2>原料实时库存结构 <CircleHelp /></h2><div class="raw-panel-head-actions"><p>库存快照 {{ snapshot?.meta?.latestDate }} · <b><AnimatedNumber :value="materialTanks.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 类物料</b></p></div></header>
+            <div class="raw-silo-overview" :aria-label="materialTanks.length + ' 类原料实时库存概况'">
               <article
                 v-for="(tank, index) in materialTanks"
                 :key="`${tank.id}-${refreshVersion}`"
                 class="raw-silo-card"
-                :class="[`is-${tank.materialForm}`, { 'is-high': tank.state === '高位', 'is-low': tank.state === '低位' }]"
-                data-low-threshold="0.25"
+                :class="[`is-${tank.materialForm}`, { 'is-high': tank.state !== '正常' }]"
+                data-source="inventory_snapshot"
                 :style="{ '--tank-delay': `${index * 120}ms` }"
-                :aria-label="`${tank.id} ${tank.name}，当前 ${formatTon(tank.onHand)} 吨，容量 ${tank.capacityTon} 吨，装填率 ${formatPercent(tank.fillRate, 0)}，${tank.state}`"
+                :aria-label="tank.id + ' ' + tank.name + '，当前 ' + formatTon(tank.onHand) + ' 吨，可用 ' + formatTon(tank.available) + ' 吨，库存占比 ' + formatPercent(tank.fillRate, 0) + '，' + tank.state"
               >
                 <header class="raw-silo-card-head">
                   <span><b>{{ tank.id }}</b><em>· {{ tank.name }}</em></span>
@@ -398,17 +379,17 @@ onBeforeUnmount(() => {
                 <div class="raw-silo-card-body">
                   <div class="raw-silo-model"><IndustrialTank :fill-rate="tank.fillRate" :material-form="tank.materialForm" :animation-key="refreshVersion" /><span class="raw-silo-form">{{ tank.materialFormLabel }}</span></div>
                   <div class="raw-silo-copy">
-                    <strong class="raw-silo-rate"><AnimatedNumber :value="tank.fillRate" :formatter="(value) => formatPercent(value, 0)" :animation-key="refreshVersion" /><em>占用率</em></strong>
+                    <strong class="raw-silo-rate"><AnimatedNumber :value="tank.fillRate" :formatter="(value) => formatPercent(value, 0)" :animation-key="refreshVersion" /><em>库存占比</em></strong>
                     <strong class="raw-silo-quantity"><AnimatedNumber :value="tank.onHand" :formatter="formatTon" :animation-key="refreshVersion" /><em>吨</em></strong>
                     <p>可用 <AnimatedNumber :value="tank.available" :formatter="formatTon" :animation-key="refreshVersion" /> 吨</p>
-                    <dl><div><dt>罐容</dt><dd><AnimatedNumber :value="tank.capacityTon" :formatter="formatInteger" :animation-key="refreshVersion" /> 吨</dd></div><div><dt>物料密度</dt><dd><AnimatedNumber :value="tank.density" :formatter="formatTwoDecimals" :animation-key="refreshVersion" /> t/m³</dd></div></dl>
+                    <dl><div><dt>规格</dt><dd>{{ tank.specification || '—' }}</dd></div><div><dt>关联项目</dt><dd><AnimatedNumber :value="tank.projects" :formatter="formatInteger" :animation-key="refreshVersion" /> 个</dd></div></dl>
                   </div>
                 </div>
-                <div class="raw-silo-progress" aria-label="25% 低位预警线"><i :style="{ width: formatPercent(tank.fillRate, 0) }" /><span class="raw-silo-low-threshold" title="25% 低位预警线" /></div>
+                <div class="raw-silo-progress" aria-label="该物料占总库存比例"><i :style="{ width: formatPercent(tank.fillRate, 0) }" /></div>
               </article>
             </div>
             <div class="raw-posture-metrics">
-              <div><span>筒内总量</span><strong><AnimatedNumber :value="summary.stockOnHandTon" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
+              <div><span>库存总量</span><strong><AnimatedNumber :value="summary.stockOnHandTon" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
               <div><span>可用库存</span><strong><AnimatedNumber :value="summary.stockAvailableTon" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
               <div><span>预留库存</span><strong><AnimatedNumber :value="summary.stockReservedTon" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
               <div><span>冻结库存</span><strong><AnimatedNumber :value="summary.stockFrozenTon" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
@@ -417,7 +398,7 @@ onBeforeUnmount(() => {
 
           <article class="raw-panel raw-month-panel" role="link" tabindex="0" aria-label="查看本月保障详情" @click="navigateTo('/performance')" @keydown.enter.self="navigateTo('/performance')" @keydown.space.self.prevent="navigateTo('/performance')">
             <span class="raw-panel-accent" />
-            <header class="raw-panel-title split"><h2>本月保障能力</h2><div class="raw-panel-head-actions"><p>31 天历史口径</p></div></header>
+            <header class="raw-panel-title split"><h2>本期保障能力</h2><div class="raw-panel-head-actions"><p>{{ historyDayCount }} 天数据库口径</p></div></header>
             <div class="raw-month-section-label"><span>今日运营概况</span><em>实时保障节奏</em></div>
             <div class="raw-month-overview">
               <div class="is-orders">

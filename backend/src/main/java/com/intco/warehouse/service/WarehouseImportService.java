@@ -1,4 +1,5 @@
 package com.intco.warehouse.service;
+import com.intco.warehouse.entity.WarehouseEntity;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -32,28 +33,29 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class WarehouseImportService {
     private static final int MAX_IMPORT_ROWS = 10000;
+    private static final String AGE_RULE_SHEET = "\u5e93\u9f84\u89c4\u5219";
+    private static final String AGE_BATCH_SHEET = "\u5e93\u9f84\u6279\u6b21\u660e\u7ec6";
+    private static final String AGE_SKU_SHEET = "\u5e93\u9f84SKU\u6c47\u603b";
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final List<DateTimeFormatter> DATE_TIMES = Arrays.asList(
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"),
             DateTimeFormatter.ISO_LOCAL_DATE_TIME);
 
-    private final JdbcTemplate jdbc;
+    private final EntityPersistenceService persistenceService;
 
-    public WarehouseImportService(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    public WarehouseImportService(EntityPersistenceService persistenceService) {
+        this.persistenceService = persistenceService;
     }
 
     public boolean isEmpty() {
-        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM warehouse", Integer.class);
-        return count == null || count == 0;
+        return persistenceService.isWarehouseEmpty();
     }
 
     @Transactional
@@ -69,7 +71,7 @@ public class WarehouseImportService {
             }
 
             clearBusinessTables();
-            batch("INSERT INTO warehouse (warehouse_id, warehouse_name, warehouse_type, warehouse_role, area_count, capacity_locations, warehouse_owner) VALUES (?,?,?,?,?,?,?)", warehouses);
+            persistenceService.insertWarehouses(warehouses);
 
             int importedRows = warehouses.size();
             importedRows += importInventory(workbook);
@@ -79,6 +81,11 @@ public class WarehouseImportService {
             importedRows += importExceptions(workbook);
             importedRows += importBom(workbook);
             importedRows += importTargets(workbook);
+            if (hasInventoryAgeSheets(workbook)) {
+                importedRows += importInventoryAgeRules(workbook);
+                importedRows += importInventoryAgeBatches(workbook);
+                importedRows += importInventoryAgeSkus(workbook);
+            }
 
             writeImportJob(importId, fileName, "FULL_WORKBOOK", importedRows, startedAt, "SUCCESS", "完整数据集已原子替换");
             LocalDate[] range = dateRange();
@@ -112,9 +119,9 @@ public class WarehouseImportService {
         if (rows.isEmpty()) throw new IllegalArgumentException("CSV 中没有可导入的数据行");
 
         for (Object[] row : rows) {
-            jdbc.update("DELETE FROM warehouse_daily_metric WHERE biz_date=? AND warehouse_id=?", row[0], row[1]);
+            persistenceService.deleteWarehouseDaily(row[0], row[1]);
         }
-        batch(WAREHOUSE_DAILY_INSERT, rows);
+        persistenceService.insertWarehouseDaily(rows);
         writeImportJob(importId, fileName, "WAREHOUSE_DAILY_CSV", rows.size(), startedAt, "SUCCESS", "仓库日指标已按日期和仓库合并");
         LocalDate[] range = dateRange();
         return new ImportSummary(importId, "WAREHOUSE_DAILY_CSV", rows.size(), range[0], range[1]);
@@ -124,7 +131,13 @@ public class WarehouseImportService {
         String[] names = {"仓库主数据", "现存量快照", "运营_SKU日指标", "运营_仓库每日指标", "运营_库区状态", "运营_异常事件", "项目_BOM关系", "运营_KPI目标"};
         List<String> missing = new ArrayList<>();
         for (String name : names) if (workbook.getSheet(name) == null) missing.add(name);
+        for (String name : new String[]{AGE_RULE_SHEET, AGE_BATCH_SHEET, AGE_SKU_SHEET}) if (workbook.getSheet(name) == null) missing.add(name);
         if (!missing.isEmpty()) throw new IllegalArgumentException("Excel 缺少工作表：" + String.join("、", missing));
+    }
+
+    private boolean hasInventoryAgeSheets(Workbook workbook) {
+        return workbook.getSheet(AGE_RULE_SHEET) != null && workbook.getSheet(AGE_BATCH_SHEET) != null
+                && workbook.getSheet(AGE_SKU_SHEET) != null;
     }
 
     private Map<String, String> readWarehouseRoles(Workbook workbook) {
@@ -158,7 +171,7 @@ public class WarehouseImportService {
                 table.decimal(row, "on_hand_main_qty"), table.decimal(row, "reserved_main_qty"), table.decimal(row, "frozen_main_qty"),
                 table.decimal(row, "vendor_owned_on_hand_main_qty")
         }));
-        batch("INSERT INTO inventory_snapshot (warehouse_id,material_code,project_no,stock_date,warehouse_name,material_name,customer_item,project_material_sku,product_index_no,glove_size,color_code,main_uom,specification,model,on_hand_main_qty,reserved_main_qty,frozen_main_qty,vendor_owned_on_hand_main_qty) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows);
+        persistenceService.insertInventory(rows);
         return rows.size();
     }
 
@@ -178,7 +191,7 @@ public class WarehouseImportService {
                 table.nullableDecimal(row, "delivery_timely_rate"), table.nullableDecimal(row, "avg_receipt_minutes"),
                 table.nullableDecimal(row, "avg_picking_minutes"), table.integer(row, "exception_count"), table.nullableDecimal(row, "avg_outbound_lead_days")
         }));
-        batch("INSERT INTO sku_daily_metric (biz_date,warehouse_id,warehouse_name,warehouse_type,warehouse_role,project_no,project_name,material_code,material_name,project_material_sku,warehouse_sku_key,material_category,color,model,uom,packaging_level,area_id,area_name,inbound_order_count,inbound_line_count,inbound_qty,outbound_order_count,outbound_line_count,outbound_qty,picking_task_count,forklift_task_count,inventory_accuracy,receipt_timely_rate,delivery_timely_rate,avg_receipt_minutes,avg_picking_minutes,exception_count,avg_outbound_lead_days) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows);
+        persistenceService.insertSkuDaily(rows);
         return rows.size();
     }
 
@@ -186,7 +199,7 @@ public class WarehouseImportService {
         Table table = Table.open(workbook, "运营_仓库每日指标", "biz_date");
         List<Object[]> rows = new ArrayList<>();
         table.forEach(row -> rows.add(warehouseDailyRow(table, row)));
-        batch(WAREHOUSE_DAILY_INSERT, rows);
+        persistenceService.insertWarehouseDaily(rows);
         return rows.size();
     }
 
@@ -209,7 +222,7 @@ public class WarehouseImportService {
                 table.requiredText(row, "area_name"), table.integer(row, "capacity_locations"), table.integer(row, "occupied_locations"),
                 table.integer(row, "available_locations"), table.decimal(row, "occupancy_rate"), table.integer(row, "material_type_count"),
                 table.integer(row, "abnormal_location_count"), table.decimal(row, "frozen_qty"), table.text(row, "area_owner"), table.requiredText(row, "status")}));
-        batch("INSERT INTO warehouse_area_snapshot (snapshot_date,warehouse_id,warehouse_name,warehouse_type,area_id,area_name,capacity_locations,occupied_locations,available_locations,occupancy_rate,material_type_count,abnormal_location_count,frozen_qty,area_owner,status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows);
+        persistenceService.insertAreaSnapshots(rows);
         return rows.size();
     }
 
@@ -225,7 +238,7 @@ public class WarehouseImportService {
                 table.nullableDecimal(row, "sla_hours"), table.nullableTimestamp(row, "deadline_time"), table.nullableTimestamp(row, "close_time"),
                 table.nullableInteger(row, "duration_minutes"), table.yesNo(row, "is_sla_breached"), table.text(row, "root_cause"),
                 table.text(row, "action_taken"), table.text(row, "remark")}));
-        batch("INSERT INTO exception_event (event_id,event_time,event_type,warehouse_id,warehouse_name,warehouse_type,project_no,project_name,material_code,material_name,project_material_sku,material_category,color,model,uom,packaging_level,area_id,area_name,severity,handling_status,owner,response_minutes,sla_hours,deadline_time,close_time,duration_minutes,is_sla_breached,root_cause,action_taken,remark) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows);
+        persistenceService.insertExceptions(rows);
         return rows.size();
     }
 
@@ -238,7 +251,7 @@ public class WarehouseImportService {
                 table.requiredText(row, "component_material_code"), table.requiredText(row, "component_material_name"), table.text(row, "component_color"),
                 table.text(row, "component_model"), table.requiredText(row, "component_uom"), table.decimal(row, "component_qty_per_finished_carton"),
                 table.requiredText(row, "component_qty_uom"), table.text(row, "bom_relationship")}));
-        batch("INSERT INTO bom_relation (project_no,project_name,finished_material_code,finished_material_name,finished_color,finished_model,finished_uom,component_category,component_material_code,component_material_name,component_color,component_model,component_uom,component_qty_per_finished_carton,component_qty_uom,bom_relationship) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", rows);
+        persistenceService.insertBom(rows);
         return rows.size();
     }
 
@@ -247,24 +260,85 @@ public class WarehouseImportService {
         List<Object[]> rows = new ArrayList<>();
         table.forEach(row -> rows.add(new Object[]{table.requiredText(row, "kpi_name"), table.decimal(row, "target_value"),
                 table.requiredText(row, "unit"), table.requiredText(row, "warning_rule"), table.text(row, "calculation_definition"), table.text(row, "data_source")}));
-        batch("INSERT INTO kpi_target (kpi_name,target_value,unit,warning_rule,calculation_definition,data_source) VALUES (?,?,?,?,?,?)", rows);
+        persistenceService.insertTargets(rows);
+        return rows.size();
+    }
+
+    private int importInventoryAgeRules(Workbook workbook) {
+        Table table = Table.open(workbook, AGE_RULE_SHEET, "rule_type");
+        List<Object[]> rows = new ArrayList<>();
+        table.forEach(row -> rows.add(new Object[]{
+                table.requiredText(row, "rule_type"), table.requiredText(row, "rule_name"),
+                table.requiredText(row, "rule_condition"), table.requiredText(row, "result_level"),
+                table.text(row, "action_guidance"), table.text(row, "applicable_scope")
+        }));
+        persistenceService.insertInventoryAgeRules(rows);
+        return rows.size();
+    }
+
+    private int importInventoryAgeBatches(Workbook workbook) {
+        Table table = Table.open(workbook, AGE_BATCH_SHEET, "age_batch_id");
+        List<Object[]> rows = new ArrayList<>();
+        table.forEach(row -> rows.add(new Object[]{
+                table.sqlDate(row, "snapshot_date"), table.requiredText(row, "age_batch_id"),
+                table.requiredText(row, "warehouse_id"), table.requiredText(row, "warehouse_name"),
+                table.requiredText(row, "warehouse_type"), table.requiredText(row, "project_no"),
+                table.requiredText(row, "project_name"), table.requiredText(row, "material_code"),
+                table.requiredText(row, "material_name"), table.requiredText(row, "project_material_sku"),
+                table.requiredText(row, "material_category"), table.text(row, "color"), table.text(row, "model"),
+                table.requiredText(row, "uom"), table.requiredText(row, "batch_no"),
+                table.sqlDate(row, "receipt_date"), table.integer(row, "age_days"),
+                table.requiredText(row, "age_bucket"), table.decimal(row, "batch_on_hand_qty"),
+                table.decimal(row, "batch_reserved_qty"), table.decimal(row, "batch_frozen_qty"),
+                table.decimal(row, "available_qty"), table.nullableDecimal(row, "unit_cost"),
+                table.nullableDecimal(row, "inventory_amount"), table.nullableSqlDate(row, "last_outbound_date"),
+                table.nullableInteger(row, "days_since_last_outbound"), table.decimal(row, "outbound_qty_30d"),
+                table.nullableDecimal(row, "outbound_rate_30d"), table.nullableDecimal(row, "coverage_days"),
+                table.text(row, "movement_status"), table.requiredText(row, "stagnant_level"),
+                table.yesNo(row, "is_stagnant"), table.decimal(row, "stagnant_score"),
+                table.text(row, "priority"), table.text(row, "recommended_action"),
+                table.text(row, "owner"), table.text(row, "data_source")
+        }));
+        persistenceService.insertInventoryAgeBatches(rows);
+        return rows.size();
+    }
+
+    private int importInventoryAgeSkus(Workbook workbook) {
+        Table table = Table.open(workbook, AGE_SKU_SHEET, "project_material_sku");
+        List<Object[]> rows = new ArrayList<>();
+        table.forEach(row -> rows.add(new Object[]{
+                table.sqlDate(row, "snapshot_date"), table.requiredText(row, "warehouse_id"),
+                table.requiredText(row, "warehouse_name"), table.requiredText(row, "warehouse_type"),
+                table.requiredText(row, "project_no"), table.requiredText(row, "project_name"),
+                table.requiredText(row, "material_code"), table.requiredText(row, "material_name"),
+                table.requiredText(row, "project_material_sku"), table.requiredText(row, "material_category"),
+                table.text(row, "color"), table.text(row, "model"), table.requiredText(row, "uom"),
+                table.integer(row, "batch_count"), table.decimal(row, "on_hand_qty"),
+                table.decimal(row, "available_qty"), table.nullableDecimal(row, "inventory_amount"),
+                table.nullableDecimal(row, "weighted_avg_age_days"), table.integer(row, "max_age_days"),
+                table.text(row, "dominant_age_bucket"), table.decimal(row, "outbound_qty_30d"),
+                table.nullableDecimal(row, "outbound_rate_30d"),
+                table.nullableSqlDate(row, "latest_sku_outbound_date"),
+                table.nullableInteger(row, "days_since_last_sku_outbound"),
+                table.integer(row, "stagnant_batch_count"),
+                table.nullableDecimal(row, "stagnant_inventory_amount"),
+                table.nullableDecimal(row, "stagnation_ratio"), table.requiredText(row, "stagnant_level"),
+                table.yesNo(row, "is_stagnant"), table.decimal(row, "stagnant_score"),
+                table.text(row, "priority"), table.text(row, "recommended_action"), table.text(row, "owner")
+        }));
+        persistenceService.insertInventoryAgeSkus(rows);
         return rows.size();
     }
 
     private void clearBusinessTables() {
-        for (String table : Arrays.asList("exception_event", "warehouse_area_snapshot", "warehouse_daily_metric", "sku_daily_metric", "inventory_snapshot", "bom_relation", "kpi_target", "warehouse")) {
-            jdbc.update("DELETE FROM " + table);
-        }
-    }
-
-    private void batch(String sql, List<Object[]> rows) {
-        if (!rows.isEmpty()) jdbc.batchUpdate(sql, rows);
+        persistenceService.clearAll();
     }
 
     private Map<String, String> warehouseIdsByName() {
         Map<String, String> result = new HashMap<>();
-        jdbc.query("SELECT warehouse_id, warehouse_name FROM warehouse",
-                (org.springframework.jdbc.core.RowCallbackHandler) rs -> result.put(rs.getString(2), rs.getString(1)));
+        for (WarehouseEntity warehouse : persistenceService.warehouses()) {
+            result.put(warehouse.getWarehouseName(), warehouse.getWarehouseId());
+        }
         return result;
     }
 
@@ -275,13 +349,11 @@ public class WarehouseImportService {
     }
 
     private void writeImportJob(String id, String fileName, String type, int rows, LocalDateTime startedAt, String status, String message) {
-        jdbc.update("INSERT INTO data_import_job (import_id,file_name,import_type,imported_rows,started_at,finished_at,status,message) VALUES (?,?,?,?,?,?,?,?)",
-                id, fileName == null ? "" : fileName, type, rows, Timestamp.valueOf(startedAt), Timestamp.valueOf(LocalDateTime.now()), status, message);
+        persistenceService.insertImportJob(id, fileName == null ? "" : fileName, type, rows, startedAt, LocalDateTime.now(), status, message);
     }
 
     private LocalDate[] dateRange() {
-        return jdbc.queryForObject("SELECT MIN(biz_date), MAX(biz_date) FROM warehouse_daily_metric", (rs, rowNum) ->
-                new LocalDate[]{rs.getDate(1).toLocalDate(), rs.getDate(2).toLocalDate()});
+        return persistenceService.metricDateRange();
     }
 
     private Map<String, String> canonicalCsvHeaders(Iterable<String> sourceHeaders) {
@@ -298,10 +370,11 @@ public class WarehouseImportService {
     private Object[] csvDailyRow(Map<String, String> values, int rowNumber) {
         try {
             String warehouseId = value(values, "warehouse_id", "WH-FG03");
-            Map<String, Object> warehouse = jdbc.queryForMap("SELECT warehouse_name, warehouse_type FROM warehouse WHERE warehouse_id=?", warehouseId);
+            WarehouseEntity warehouse = persistenceService.warehouse(warehouseId);
+            if (warehouse == null) throw new IllegalArgumentException("?????" + warehouseId);
             return new Object[]{Date.valueOf(parseDate(value(values, "biz_date", null))), warehouseId,
-                    value(values, "warehouse_name", String.valueOf(warehouse.get("warehouse_name"))),
-                    value(values, "warehouse_type", String.valueOf(warehouse.get("warehouse_type"))),
+                    value(values, "warehouse_name", warehouse.getWarehouseName()),
+                    value(values, "warehouse_type", warehouse.getWarehouseType()),
                     integer(values, "inbound_order_count"), integer(values, "outbound_order_count"), decimal(values, "raw_inbound_ton"),
                     decimal(values, "raw_outbound_ton"), integer(values, "finished_inbound_carton"), integer(values, "finished_outbound_carton"),
                     integer(values, "packaging_inbound_piece"), integer(values, "packaging_outbound_piece"), integer(values, "picking_task_count"),
@@ -357,7 +430,6 @@ public class WarehouseImportService {
         catch (DateTimeParseException error) { throw new IllegalArgumentException("业务日期格式应为 yyyy-MM-dd"); }
     }
 
-    private static final String WAREHOUSE_DAILY_INSERT = "INSERT INTO warehouse_daily_metric (biz_date,warehouse_id,warehouse_name,warehouse_type,inbound_order_count,outbound_order_count,raw_inbound_ton,raw_outbound_ton,finished_inbound_carton,finished_outbound_carton,packaging_inbound_piece,packaging_outbound_piece,picking_task_count,forklift_task_count,inventory_accuracy,receipt_timely_rate,delivery_timely_rate,exception_count,avg_receipt_minutes,avg_picking_minutes,dock_utilization_rate,overtime_hours) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
     public static class ImportSummary {
         private final String importId;
@@ -449,6 +521,16 @@ public class WarehouseImportService {
             }
             return Date.valueOf(parseDate(formatter.formatCellValue(cell)));
         }
+        Date nullableSqlDate(Row row, String field) {
+            Cell cell = cell(row, field);
+            if (cell == null || cell.getCellType() == CellType.BLANK) return null;
+            if (cell.getCellType() == CellType.NUMERIC && DateUtil.isValidExcelDate(cell.getNumericCellValue())) {
+                return Date.valueOf(cell.getLocalDateTimeCellValue().toLocalDate());
+            }
+            String value = formatter.formatCellValue(cell).trim();
+            return value.isEmpty() || "-".equals(value) ? null : Date.valueOf(parseDate(value));
+        }
+
 
         Timestamp sqlTimestamp(Row row, String field) {
             Timestamp value = nullableTimestamp(row, field);

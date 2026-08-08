@@ -1,16 +1,14 @@
 package com.intco.warehouse.service;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.intco.warehouse.entity.*;
+import com.intco.warehouse.mapper.*;
 import com.intco.warehouse.model.DashboardData;
 import com.intco.warehouse.model.DashboardData.Alert;
 import com.intco.warehouse.model.DashboardData.DailyMetric;
 import com.intco.warehouse.model.DashboardData.Target;
 import com.intco.warehouse.model.DashboardData.WarehouseDailyMetric;
 import com.intco.warehouse.model.DashboardData.Zone;
-import java.math.BigDecimal;
-import java.sql.Date;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -22,16 +20,48 @@ import java.util.Optional;
 import java.util.function.ToDoubleFunction;
 import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
-import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
 public class WarehouseDataService {
-    private final JdbcTemplate jdbc;
+    private final WarehouseMapper warehouseMapper;
+    private final InventorySnapshotMapper inventorySnapshotMapper;
+    private final SkuDailyMetricMapper skuDailyMetricMapper;
+    private final WarehouseDailyMetricMapper warehouseDailyMetricMapper;
+    private final WarehouseAreaSnapshotMapper warehouseAreaSnapshotMapper;
+    private final ExceptionEventMapper exceptionEventMapper;
+    private final BomRelationMapper bomRelationMapper;
+    private final KpiTargetMapper kpiTargetMapper;
+    private final InventoryAgeRuleMapper inventoryAgeRuleMapper;
+    private final InventoryAgeBatchMapper inventoryAgeBatchMapper;
+    private final InventoryAgeSkuMapper inventoryAgeSkuMapper;
+    private final DataImportJobMapper dataImportJobMapper;
 
-    public WarehouseDataService(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    public WarehouseDataService(
+            WarehouseMapper warehouseMapper,
+            InventorySnapshotMapper inventorySnapshotMapper,
+            SkuDailyMetricMapper skuDailyMetricMapper,
+            WarehouseDailyMetricMapper warehouseDailyMetricMapper,
+            WarehouseAreaSnapshotMapper warehouseAreaSnapshotMapper,
+            ExceptionEventMapper exceptionEventMapper,
+            BomRelationMapper bomRelationMapper,
+            KpiTargetMapper kpiTargetMapper,
+            InventoryAgeRuleMapper inventoryAgeRuleMapper,
+            InventoryAgeBatchMapper inventoryAgeBatchMapper,
+            InventoryAgeSkuMapper inventoryAgeSkuMapper,
+            DataImportJobMapper dataImportJobMapper) {
+        this.warehouseMapper = warehouseMapper;
+        this.inventorySnapshotMapper = inventorySnapshotMapper;
+        this.skuDailyMetricMapper = skuDailyMetricMapper;
+        this.warehouseDailyMetricMapper = warehouseDailyMetricMapper;
+        this.warehouseAreaSnapshotMapper = warehouseAreaSnapshotMapper;
+        this.exceptionEventMapper = exceptionEventMapper;
+        this.bomRelationMapper = bomRelationMapper;
+        this.kpiTargetMapper = kpiTargetMapper;
+        this.inventoryAgeRuleMapper = inventoryAgeRuleMapper;
+        this.inventoryAgeBatchMapper = inventoryAgeBatchMapper;
+        this.inventoryAgeSkuMapper = inventoryAgeSkuMapper;
+        this.dataImportJobMapper = dataImportJobMapper;
     }
 
     public DashboardData currentData() {
@@ -64,26 +94,23 @@ public class WarehouseDataService {
     }
 
     public List<Map<String, Object>> warehouses() {
-        return jdbc.query("SELECT warehouse_id,warehouse_name,warehouse_type,warehouse_role,area_count,capacity_locations,warehouse_owner FROM warehouse ORDER BY warehouse_id",
-                (rs, rowNum) -> mapOf(
-                        "warehouseId", rs.getString("warehouse_id"), "warehouseName", rs.getString("warehouse_name"),
-                        "warehouseType", rs.getString("warehouse_type"), "warehouseRole", rs.getString("warehouse_role"),
-                        "areaCount", rs.getInt("area_count"), "capacityLocations", rs.getInt("capacity_locations"),
-                        "warehouseOwner", rs.getString("warehouse_owner")));
+        return warehouseMapper.selectList(Wrappers.lambdaQuery(WarehouseEntity.class).orderByAsc(WarehouseEntity::getWarehouseId)).stream()
+                .map(row -> mapOf(
+                        "warehouseId", row.getWarehouseId(), "warehouseName", row.getWarehouseName(),
+                        "warehouseType", row.getWarehouseType(), "warehouseRole", row.getWarehouseRole(),
+                        "areaCount", row.getAreaCount(), "capacityLocations", row.getCapacityLocations(),
+                        "warehouseOwner", row.getWarehouseOwner()))
+                .collect(Collectors.toList());
     }
 
     public Optional<Map<String, Object>> warehouseSnapshot(String warehouseId, int requestedRange) {
-        Map<String, Object> warehouse;
-        try {
-            warehouse = jdbc.queryForObject("SELECT warehouse_id,warehouse_name,warehouse_type,warehouse_role,area_count,capacity_locations,warehouse_owner FROM warehouse WHERE warehouse_id=?",
-                    (rs, rowNum) -> mapOf(
-                            "warehouseId", rs.getString("warehouse_id"), "warehouseName", rs.getString("warehouse_name"),
-                            "warehouseType", rs.getString("warehouse_type"), "warehouseRole", rs.getString("warehouse_role"),
-                            "areaCount", rs.getInt("area_count"), "capacityLocations", rs.getInt("capacity_locations"),
-                            "owners", splitOwners(rs.getString("warehouse_owner"))), warehouseId);
-        } catch (EmptyResultDataAccessException missing) {
-            return Optional.empty();
-        }
+        WarehouseEntity warehouseRow = warehouseMapper.selectById(warehouseId);
+        if (warehouseRow == null) return Optional.empty();
+        Map<String, Object> warehouse = mapOf(
+                "warehouseId", warehouseRow.getWarehouseId(), "warehouseName", warehouseRow.getWarehouseName(),
+                "warehouseType", warehouseRow.getWarehouseType(), "warehouseRole", warehouseRow.getWarehouseRole(),
+                "areaCount", warehouseRow.getAreaCount(), "capacityLocations", warehouseRow.getCapacityLocations(),
+                "owners", splitOwners(warehouseRow.getWarehouseOwner()));
 
         List<WarehouseDailyMetric> allDaily = loadWarehouseDaily(warehouseId);
         int range = Math.max(1, Math.min(requestedRange, 366));
@@ -116,14 +143,16 @@ public class WarehouseDataService {
         result.put("openExceptions", openAlerts);
         result.put("inventory", inventory);
         result.put("stocks", stocks);
+        result.put("skuOperations", loadLatestSkuOperations(warehouseId));
         result.put("targets", targets.stream().map(this::targetMap).collect(Collectors.toList()));
         result.put("exceptionBreakdown", exceptionBreakdown(alertMaps));
         return Optional.of(result);
     }
 
     public Optional<Map<String, Object>> zoneDetail(String code) {
-        List<Zone> matches = jdbc.query("SELECT snapshot_date,warehouse_name,area_id,area_name,capacity_locations,occupied_locations,available_locations,occupancy_rate,material_type_count,abnormal_location_count,frozen_qty,area_owner,status FROM warehouse_area_snapshot WHERE area_id=? ORDER BY snapshot_date DESC LIMIT 1",
-                this::mapZone, code);
+        List<Zone> matches = warehouseAreaSnapshotMapper.selectList(Wrappers.lambdaQuery(WarehouseAreaSnapshotEntity.class)
+                        .eq(WarehouseAreaSnapshotEntity::getAreaId, code).orderByDesc(WarehouseAreaSnapshotEntity::getSnapshotDate).last("LIMIT 1"))
+                .stream().map(this::mapZone).collect(Collectors.toList());
         if (matches.isEmpty()) return Optional.empty();
         Zone zone = matches.get(0);
         Map<String, Object> result = new LinkedHashMap<>();
@@ -134,55 +163,87 @@ public class WarehouseDataService {
 
     public Map<String, Object> dataStatus() {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("warehouses", scalar("SELECT COUNT(*) FROM warehouse"));
-        result.put("inventorySnapshots", scalar("SELECT COUNT(*) FROM inventory_snapshot"));
-        result.put("skuDailyMetrics", scalar("SELECT COUNT(*) FROM sku_daily_metric"));
-        result.put("warehouseDailyMetrics", scalar("SELECT COUNT(*) FROM warehouse_daily_metric"));
-        result.put("areaSnapshots", scalar("SELECT COUNT(*) FROM warehouse_area_snapshot"));
-        result.put("exceptionEvents", scalar("SELECT COUNT(*) FROM exception_event"));
-        result.put("bomRelations", scalar("SELECT COUNT(*) FROM bom_relation"));
-        result.put("kpiTargets", scalar("SELECT COUNT(*) FROM kpi_target"));
+        result.put("warehouses", warehouseMapper.selectCount(null));
+        result.put("inventorySnapshots", inventorySnapshotMapper.selectCount(null));
+        result.put("skuDailyMetrics", skuDailyMetricMapper.selectCount(null));
+        result.put("warehouseDailyMetrics", warehouseDailyMetricMapper.selectCount(null));
+        result.put("areaSnapshots", warehouseAreaSnapshotMapper.selectCount(null));
+        result.put("exceptionEvents", exceptionEventMapper.selectCount(null));
+        result.put("bomRelations", bomRelationMapper.selectCount(null));
+        result.put("kpiTargets", kpiTargetMapper.selectCount(null));
+        result.put("inventoryAgeRules", inventoryAgeRuleMapper.selectCount(null));
+        result.put("inventoryAgeBatches", inventoryAgeBatchMapper.selectCount(null));
+        result.put("inventoryAgeSkus", inventoryAgeSkuMapper.selectCount(null));
+        result.put("importJobs", dataImportJobMapper.selectCount(null));
         result.putAll(loadMeta(null));
         return result;
     }
 
-    private int scalar(String sql) {
-        Integer value = jdbc.queryForObject(sql, Integer.class);
-        return value == null ? 0 : value;
+    private List<Map<String, Object>> loadLatestSkuOperations(String warehouseId) {
+        List<SkuDailyMetricEntity> rows = skuDailyMetricMapper.selectList(
+                Wrappers.lambdaQuery(SkuDailyMetricEntity.class)
+                        .eq(SkuDailyMetricEntity::getWarehouseId, warehouseId)
+                        .orderByDesc(SkuDailyMetricEntity::getBizDate)
+                        .orderByAsc(SkuDailyMetricEntity::getProjectNo, SkuDailyMetricEntity::getMaterialCode));
+        if (rows.isEmpty()) return new ArrayList<>();
+        LocalDate latestDate = rows.get(0).getBizDate();
+        return rows.stream()
+                .filter(row -> latestDate.equals(row.getBizDate()))
+                .map(row -> mapOf(
+                        "date", row.getBizDate().toString(),
+                        "projectNo", row.getProjectNo(),
+                        "projectName", row.getProjectName(),
+                        "materialCode", row.getMaterialCode(),
+                        "materialName", row.getMaterialName(),
+                        "areaCode", row.getAreaId(),
+                        "areaName", row.getAreaName(),
+                        "uom", row.getUom(),
+                        "inboundOrders", row.getInboundOrderCount(),
+                        "inboundLines", row.getInboundLineCount(),
+                        "inboundQty", number(row.getInboundQty()),
+                        "outboundOrders", row.getOutboundOrderCount(),
+                        "outboundLines", row.getOutboundLineCount(),
+                        "outboundQty", number(row.getOutboundQty()),
+                        "pickingTasks", row.getPickingTaskCount(),
+                        "forkliftTasks", row.getForkliftTaskCount(),
+                        "receiptTimely", number(row.getReceiptTimelyRate()),
+                        "deliveryTimely", number(row.getDeliveryTimelyRate()),
+                        "exceptions", row.getExceptionCount()))
+                .collect(Collectors.toList());
     }
-
     private List<WarehouseDailyMetric> loadWarehouseDaily(String warehouseId) {
-        String sql = "SELECT * FROM warehouse_daily_metric" + (warehouseId == null ? "" : " WHERE warehouse_id=?") + " ORDER BY biz_date,warehouse_id";
-        return warehouseId == null ? jdbc.query(sql, this::mapWarehouseDaily) : jdbc.query(sql, this::mapWarehouseDaily, warehouseId);
-    }
+        return warehouseDailyMetricMapper.selectList(Wrappers.lambdaQuery(WarehouseDailyMetricEntity.class)
+                        .eq(warehouseId != null, WarehouseDailyMetricEntity::getWarehouseId, warehouseId).orderByAsc(WarehouseDailyMetricEntity::getBizDate, WarehouseDailyMetricEntity::getWarehouseId)).stream()
+                .map(this::mapWarehouseDaily).collect(Collectors.toList());
 
-    private WarehouseDailyMetric mapWarehouseDaily(ResultSet rs, int rowNum) throws SQLException {
+    }
+    private WarehouseDailyMetric mapWarehouseDaily(WarehouseDailyMetricEntity source) {
         WarehouseDailyMetric row = new WarehouseDailyMetric();
-        row.setDate(rs.getDate("biz_date").toLocalDate().toString());
-        row.setWarehouseId(rs.getString("warehouse_id"));
-        row.setWarehouseName(rs.getString("warehouse_name"));
-        row.setWarehouseType(rs.getString("warehouse_type"));
-        row.setInboundOrders(rs.getInt("inbound_order_count"));
-        row.setOutboundOrders(rs.getInt("outbound_order_count"));
-        row.setRawInboundTon(rs.getDouble("raw_inbound_ton"));
-        row.setRawOutboundTon(rs.getDouble("raw_outbound_ton"));
-        row.setFinishedInboundCarton(rs.getInt("finished_inbound_carton"));
-        row.setFinishedOutboundCarton(rs.getInt("finished_outbound_carton"));
-        row.setPackagingInboundPiece(rs.getInt("packaging_inbound_piece"));
-        row.setPackagingOutboundPiece(rs.getInt("packaging_outbound_piece"));
-        row.setInbound(rs.getInt("finished_inbound_carton"));
-        row.setOutbound(rs.getInt("finished_outbound_carton"));
-        row.setPicking(rs.getInt("picking_task_count"));
-        row.setForkliftTasks(rs.getInt("forklift_task_count"));
-        row.setInventoryAccuracy(rs.getDouble("inventory_accuracy"));
-        row.setReceivingTimely(rs.getDouble("receipt_timely_rate"));
-        row.setDeliveryTimely(rs.getDouble("delivery_timely_rate"));
-        row.setExceptions(rs.getInt("exception_count"));
-        row.setReceiptMinutes(rs.getDouble("avg_receipt_minutes"));
-        row.setPickingMinutes(rs.getDouble("avg_picking_minutes"));
+        row.setDate(source.getBizDate().toString());
+        row.setWarehouseId(source.getWarehouseId());
+        row.setWarehouseName(source.getWarehouseName());
+        row.setWarehouseType(source.getWarehouseType());
+        row.setInboundOrders(source.getInboundOrderCount());
+        row.setOutboundOrders(source.getOutboundOrderCount());
+        row.setRawInboundTon(number(source.getRawInboundTon()));
+        row.setRawOutboundTon(number(source.getRawOutboundTon()));
+        row.setFinishedInboundCarton(source.getFinishedInboundCarton());
+        row.setFinishedOutboundCarton(source.getFinishedOutboundCarton());
+        row.setPackagingInboundPiece(source.getPackagingInboundPiece());
+        row.setPackagingOutboundPiece(source.getPackagingOutboundPiece());
+        row.setInbound(source.getFinishedInboundCarton());
+        row.setOutbound(source.getFinishedOutboundCarton());
+        row.setPicking(source.getPickingTaskCount());
+        row.setForkliftTasks(source.getForkliftTaskCount());
+        row.setInventoryAccuracy(number(source.getInventoryAccuracy()));
+        row.setReceivingTimely(number(source.getReceiptTimelyRate()));
+        row.setDeliveryTimely(number(source.getDeliveryTimelyRate()));
+        row.setExceptions(source.getExceptionCount());
+        row.setReceiptMinutes(number(source.getAvgReceiptMinutes()));
+        row.setPickingMinutes(number(source.getAvgPickingMinutes()));
         row.setAverageDuration((row.getReceiptMinutes() + row.getPickingMinutes()) / 2d);
-        row.setDockUtilization(rs.getDouble("dock_utilization_rate"));
-        row.setOvertimeHours(rs.getDouble("overtime_hours"));
+        row.setDockUtilization(number(source.getDockUtilizationRate()));
+        row.setOvertimeHours(number(source.getOvertimeHours()));
         return row;
     }
 
@@ -212,132 +273,151 @@ public class WarehouseDataService {
     }
 
     private List<Zone> loadLatestZones(String warehouseId) {
-        String filter = warehouseId == null ? "" : " AND s.warehouse_id=?";
-        String sql = "SELECT s.snapshot_date,s.warehouse_name,s.area_id,s.area_name,s.capacity_locations,s.occupied_locations,s.available_locations,s.occupancy_rate,s.material_type_count,s.abnormal_location_count,s.frozen_qty,s.area_owner,s.status " +
-                "FROM warehouse_area_snapshot s JOIN (SELECT warehouse_id,MAX(snapshot_date) max_date FROM warehouse_area_snapshot GROUP BY warehouse_id) latest " +
-                "ON latest.warehouse_id=s.warehouse_id AND latest.max_date=s.snapshot_date WHERE 1=1" + filter + " ORDER BY s.warehouse_id,s.area_id";
-        return warehouseId == null ? jdbc.query(sql, this::mapZone) : jdbc.query(sql, this::mapZone, warehouseId);
+        List<WarehouseAreaSnapshotEntity> snapshots = warehouseAreaSnapshotMapper.selectList(Wrappers.lambdaQuery(WarehouseAreaSnapshotEntity.class)
+                .eq(warehouseId != null, WarehouseAreaSnapshotEntity::getWarehouseId, warehouseId)
+                .orderByAsc(WarehouseAreaSnapshotEntity::getWarehouseId, WarehouseAreaSnapshotEntity::getAreaId));
+        Map<String, LocalDate> latest = new LinkedHashMap<>();
+        for (WarehouseAreaSnapshotEntity snapshot : snapshots) latest.merge(snapshot.getWarehouseId(), snapshot.getSnapshotDate(), (a, b) -> a.isAfter(b) ? a : b);
+        return snapshots.stream().filter(row -> row.getSnapshotDate().equals(latest.get(row.getWarehouseId())))
+                .map(this::mapZone).collect(Collectors.toList());
     }
 
-    private Zone mapZone(ResultSet rs, int rowNum) throws SQLException {
+    private Zone mapZone(WarehouseAreaSnapshotEntity source) {
         Zone zone = new Zone();
-        zone.setSnapshotDate(rs.getDate("snapshot_date").toLocalDate().toString());
-        zone.setWarehouse(rs.getString("warehouse_name"));
-        zone.setCode(rs.getString("area_id"));
-        zone.setName(rs.getString("area_name"));
-        zone.setCapacity(rs.getInt("capacity_locations"));
-        zone.setOccupied(rs.getInt("occupied_locations"));
-        zone.setAvailable(rs.getInt("available_locations"));
-        zone.setOccupancy(rs.getDouble("occupancy_rate"));
-        zone.setMaterialTypes(rs.getInt("material_type_count"));
-        zone.setAbnormal(rs.getInt("abnormal_location_count"));
-        zone.setFrozen((int) Math.round(rs.getDouble("frozen_qty")));
-        zone.setManager(rs.getString("area_owner"));
-        zone.setStatus(rs.getString("status"));
+        zone.setSnapshotDate(source.getSnapshotDate().toString());
+        zone.setWarehouse(source.getWarehouseName());
+        zone.setCode(source.getAreaId());
+        zone.setName(source.getAreaName());
+        zone.setCapacity(source.getCapacityLocations());
+        zone.setOccupied(source.getOccupiedLocations());
+        zone.setAvailable(source.getAvailableLocations());
+        zone.setOccupancy(number(source.getOccupancyRate()));
+        zone.setMaterialTypes(source.getMaterialTypeCount());
+        zone.setAbnormal(source.getAbnormalLocationCount());
+        zone.setFrozen((int) Math.round(number(source.getFrozenQty())));
+        zone.setManager(source.getAreaOwner());
+        zone.setStatus(source.getStatus());
         return zone;
     }
 
     private List<Alert> loadAlerts(String warehouseId) {
-        String sql = "SELECT * FROM exception_event" + (warehouseId == null ? "" : " WHERE warehouse_id=?") + " ORDER BY event_time DESC";
-        return warehouseId == null ? jdbc.query(sql, this::mapAlert) : jdbc.query(sql, this::mapAlert, warehouseId);
+        return exceptionEventMapper.selectList(Wrappers.lambdaQuery(ExceptionEventEntity.class)
+                        .eq(warehouseId != null, ExceptionEventEntity::getWarehouseId, warehouseId).orderByDesc(ExceptionEventEntity::getEventTime)).stream()
+                .map(this::mapAlert).collect(Collectors.toList());
     }
 
     private List<Alert> loadAlertsByArea(String areaId) {
-        return jdbc.query("SELECT * FROM exception_event WHERE area_id=? ORDER BY event_time DESC", this::mapAlert, areaId);
+        return exceptionEventMapper.selectList(Wrappers.lambdaQuery(ExceptionEventEntity.class)
+                        .eq(ExceptionEventEntity::getAreaId, areaId).orderByDesc(ExceptionEventEntity::getEventTime)).stream()
+                .map(this::mapAlert).collect(Collectors.toList());
     }
 
-    private Alert mapAlert(ResultSet rs, int rowNum) throws SQLException {
-        Timestamp time = rs.getTimestamp("event_time");
+    private Alert mapAlert(ExceptionEventEntity source) {
+        java.time.LocalDateTime time = source.getEventTime();
         Alert alert = new Alert();
-        alert.setId(rs.getString("event_id"));
-        alert.setDate(time.toLocalDateTime().toLocalDate().toString());
-        alert.setTime(time.toLocalDateTime().toLocalTime().toString());
-        alert.setType(rs.getString("event_type"));
-        alert.setWarehouse(rs.getString("warehouse_name"));
-        alert.setZoneCode(rs.getString("area_id"));
-        alert.setZone(rs.getString("area_name"));
+        alert.setId(source.getEventId());
+        alert.setDate(time.toLocalDate().toString());
+        alert.setTime(time.toLocalTime().toString());
+        alert.setType(source.getEventType());
+        alert.setWarehouse(source.getWarehouseName());
+        alert.setZoneCode(source.getAreaId());
+        alert.setZone(source.getAreaName());
         alert.setTitle(alert.getType() + " · " + alert.getZone());
-        alert.setSeverity(rs.getString("severity"));
-        alert.setStatus(rs.getString("handling_status"));
-        alert.setOwner(rs.getString("owner"));
-        alert.setResponseMinutes(rs.getInt("response_minutes"));
-        alert.setSlaHours(rs.getDouble("sla_hours"));
-        int duration = rs.getInt("duration_minutes");
+        alert.setSeverity(source.getSeverity());
+        alert.setStatus(source.getHandlingStatus());
+        alert.setOwner(source.getOwner());
+        alert.setResponseMinutes(source.getResponseMinutes() == null ? 0 : source.getResponseMinutes());
+        alert.setSlaHours(number(source.getSlaHours()));
+        int duration = source.getDurationMinutes() == null ? 0 : source.getDurationMinutes();
         alert.setDurationHours(duration / 60d);
-        alert.setSlaBreached(rs.getBoolean("is_sla_breached"));
-        Timestamp closed = rs.getTimestamp("close_time");
-        alert.setClosedAt(closed == null ? null : closed.toLocalDateTime().toString());
-        alert.setDescription("根因：" + rs.getString("root_cause"));
-        alert.setRecommendation(rs.getString("action_taken"));
-        alert.setMaterial(rs.getString("material_name"));
-        alert.setProject(rs.getString("project_name"));
+        alert.setSlaBreached(Boolean.TRUE.equals(source.getIsSlaBreached()));
+        java.time.LocalDateTime closed = source.getCloseTime();
+        alert.setClosedAt(closed == null ? null : closed.toString());
+        alert.setDescription("根因：" + source.getRootCause());
+        alert.setRecommendation(source.getActionTaken());
+        alert.setMaterial(source.getMaterialName());
+        alert.setProject(source.getProjectName());
         return alert;
     }
 
     private List<Target> loadTargets() {
-        return jdbc.query("SELECT * FROM kpi_target ORDER BY kpi_name", (rs, rowNum) -> {
+        return kpiTargetMapper.selectList(Wrappers.lambdaQuery(KpiTargetEntity.class).orderByAsc(KpiTargetEntity::getKpiName)).stream()
+                .map(source -> {
             Target target = new Target();
-            target.setKey(targetKey(rs.getString("kpi_name")));
-            target.setName(rs.getString("kpi_name"));
-            target.setTarget(rs.getDouble("target_value"));
-            target.setUnit(rs.getString("unit"));
-            target.setRule(rs.getString("warning_rule"));
-            target.setDefinition(rs.getString("calculation_definition"));
-            target.setSource(rs.getString("data_source"));
+            target.setKey(targetKey(source.getKpiName()));
+            target.setName(source.getKpiName());
+            target.setTarget(number(source.getTargetValue()));
+            target.setUnit(source.getUnit());
+            target.setRule(source.getWarningRule());
+            target.setDefinition(source.getCalculationDefinition());
+            target.setSource(source.getDataSource());
             return target;
-        });
+                })
+                .collect(Collectors.toList());
     }
 
     private Map<String, Object> loadMeta(String warehouseId) {
-        String sql = "SELECT MIN(biz_date) start_date,MAX(biz_date) end_date,COUNT(DISTINCT biz_date) day_count FROM warehouse_daily_metric" + (warehouseId == null ? "" : " WHERE warehouse_id=?");
-        Map<String, Object> meta = warehouseId == null ? jdbc.queryForObject(sql, this::mapMeta) : jdbc.queryForObject(sql, this::mapMeta, warehouseId);
+        List<WarehouseDailyMetricEntity> rows = warehouseDailyMetricMapper.selectList(Wrappers.lambdaQuery(WarehouseDailyMetricEntity.class).eq(warehouseId != null, WarehouseDailyMetricEntity::getWarehouseId, warehouseId));
+        LocalDate start = rows.stream().map(WarehouseDailyMetricEntity::getBizDate).min(LocalDate::compareTo).orElse(null);
+        LocalDate end = rows.stream().map(WarehouseDailyMetricEntity::getBizDate).max(LocalDate::compareTo).orElse(null);
+        Map<String, Object> meta = new LinkedHashMap<>();
+        meta.put("period", start == null ? "" : start + " 至 " + end);
+        meta.put("latestDate", end == null ? null : end.toString());
+        meta.put("dayCount", rows.stream().map(WarehouseDailyMetricEntity::getBizDate).distinct().count());
         meta.put("source", "MySQL · warehouse_dashboard");
-        meta.put("warehouseCount", scalar("SELECT COUNT(*) FROM warehouse"));
+        meta.put("warehouseCount", warehouseMapper.selectCount(null));
         meta.put("availableZoneRows", loadLatestZones(warehouseId).size());
         meta.put("availableExceptionRows", loadAlerts(warehouseId).size());
         return meta;
     }
 
-    private Map<String, Object> mapMeta(ResultSet rs, int rowNum) throws SQLException {
-        Map<String, Object> meta = new LinkedHashMap<>();
-        Date start = rs.getDate("start_date");
-        Date end = rs.getDate("end_date");
-        meta.put("period", start == null ? "" : start.toLocalDate() + " 至 " + end.toLocalDate());
-        meta.put("latestDate", end == null ? null : end.toLocalDate().toString());
-        meta.put("dayCount", rs.getInt("day_count"));
-        return meta;
-    }
-
     private List<Map<String, Object>> loadInventory(String warehouseId, boolean grouped) {
-        if (grouped) {
-            return jdbc.query("SELECT material_code,material_name,main_uom,MAX(specification) specification,SUM(on_hand_main_qty) on_hand,SUM(reserved_main_qty) reserved,SUM(frozen_main_qty) frozen,COUNT(DISTINCT project_no) projects,MAX(stock_date) stock_date FROM inventory_snapshot WHERE warehouse_id=? GROUP BY material_code,material_name,main_uom ORDER BY material_code",
-                    (rs, rowNum) -> mapOf("code", rs.getString("material_code"), "name", rs.getString("material_name"), "uom", rs.getString("main_uom"),
-                            "specification", rs.getString("specification"), "onHand", rs.getBigDecimal("on_hand"), "reserved", rs.getBigDecimal("reserved"),
-                            "frozen", rs.getBigDecimal("frozen"), "available", rs.getBigDecimal("on_hand").subtract(rs.getBigDecimal("reserved")).subtract(rs.getBigDecimal("frozen")),
-                            "projects", rs.getInt("projects"), "stockDate", rs.getDate("stock_date").toLocalDate().toString()), warehouseId);
+        List<InventorySnapshotEntity> rows = inventorySnapshotMapper.selectList(Wrappers.lambdaQuery(InventorySnapshotEntity.class)
+                .eq(InventorySnapshotEntity::getWarehouseId, warehouseId)
+                .orderByAsc(InventorySnapshotEntity::getProjectNo, InventorySnapshotEntity::getMaterialCode));
+        if (!grouped) {
+            return rows.stream().map(source -> mapOf(
+                    "materialCode", source.getMaterialCode(), "materialName", source.getMaterialName(), "projectNo", source.getProjectNo(),
+                    "sku", source.getProjectMaterialSku(), "productIndex", source.getProductIndexNo(), "size", source.getGloveSize(),
+                    "colorCode", source.getColorCode(), "unit", source.getMainUom(), "specification", source.getSpecification(),
+                    "model", source.getModel(), "onHand", number(source.getOnHandMainQty()), "reserved", number(source.getReservedMainQty()),
+                    "frozen", number(source.getFrozenMainQty()), "stockDate", source.getStockDate().toString()))
+                    .collect(Collectors.toList());
         }
-        return jdbc.query("SELECT * FROM inventory_snapshot WHERE warehouse_id=? ORDER BY project_no,material_code", (rs, rowNum) -> mapOf(
-                "materialCode", rs.getString("material_code"), "materialName", rs.getString("material_name"), "projectNo", rs.getString("project_no"),
-                "sku", rs.getString("project_material_sku"), "productIndex", rs.getString("product_index_no"), "size", rs.getString("glove_size"),
-                "colorCode", rs.getString("color_code"), "unit", rs.getString("main_uom"), "specification", rs.getString("specification"),
-                "model", rs.getString("model"), "onHand", rs.getBigDecimal("on_hand_main_qty"), "reserved", rs.getBigDecimal("reserved_main_qty"),
-                "frozen", rs.getBigDecimal("frozen_main_qty"), "stockDate", rs.getDate("stock_date").toLocalDate().toString()), warehouseId);
+        Map<String, List<InventorySnapshotEntity>> groups = rows.stream().collect(Collectors.groupingBy(
+                row -> row.getMaterialCode() + "\u0000" + row.getMaterialName() + "\u0000" + row.getMainUom(),
+                LinkedHashMap::new, Collectors.toList()));
+        return groups.values().stream().map(items -> {
+            InventorySnapshotEntity first = items.get(0);
+            double onHand = items.stream().mapToDouble(row -> number(row.getOnHandMainQty())).sum();
+            double reserved = items.stream().mapToDouble(row -> number(row.getReservedMainQty())).sum();
+            double frozen = items.stream().mapToDouble(row -> number(row.getFrozenMainQty())).sum();
+            LocalDate stockDate = items.stream().map(InventorySnapshotEntity::getStockDate).max(LocalDate::compareTo).orElse(first.getStockDate());
+            return mapOf("code", first.getMaterialCode(), "name", first.getMaterialName(), "uom", first.getMainUom(),
+                    "specification", first.getSpecification(), "onHand", onHand, "reserved", reserved,
+                    "frozen", frozen, "available", onHand - reserved - frozen,
+                    "projects", items.stream().map(InventorySnapshotEntity::getProjectNo).distinct().count(), "stockDate", stockDate.toString());
+        }).collect(Collectors.toList());
     }
 
     private List<Map<String, Object>> loadDetailedAlerts(String warehouseId) {
-        return jdbc.query("SELECT * FROM exception_event WHERE warehouse_id=? ORDER BY event_time DESC", (rs, rowNum) -> {
-            Timestamp occurred = rs.getTimestamp("event_time");
-            Timestamp closed = rs.getTimestamp("close_time");
-            return mapOf("id", rs.getString("event_id"), "occurredAt", occurred.toLocalDateTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),
-                    "time", occurred.toLocalDateTime().toLocalTime().toString(), "type", rs.getString("event_type"), "project", rs.getString("project_name"),
-                    "materialCode", rs.getString("material_code"), "material", rs.getString("material_name"), "category", rs.getString("material_category"),
-                    "areaCode", rs.getString("area_id"), "zoneCode", rs.getString("area_id"), "area", rs.getString("area_name"), "zone", rs.getString("area_name"),
-                    "severity", rs.getString("severity"), "status", rs.getString("handling_status"), "owner", rs.getString("owner"),
-                    "responseMinutes", rs.getInt("response_minutes"), "slaHours", rs.getDouble("sla_hours"),
-                    "closedAt", closed == null ? null : closed.toLocalDateTime().toString(), "durationMinutes", rs.getObject("duration_minutes"),
-                    "durationHours", rs.getObject("duration_minutes") == null ? null : rs.getInt("duration_minutes") / 60d,
-                    "slaBreached", rs.getBoolean("is_sla_breached"), "rootCause", rs.getString("root_cause"), "action", rs.getString("action_taken"));
-        }, warehouseId);
+        return exceptionEventMapper.selectList(Wrappers.lambdaQuery(ExceptionEventEntity.class)
+                        .eq(ExceptionEventEntity::getWarehouseId, warehouseId).orderByDesc(ExceptionEventEntity::getEventTime)).stream()
+                .map(source -> {
+                    java.time.LocalDateTime occurred = source.getEventTime();
+                    java.time.LocalDateTime closed = source.getCloseTime();
+                    Integer duration = source.getDurationMinutes();
+                    return mapOf("id", source.getEventId(), "occurredAt", occurred.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),
+                            "time", occurred.toLocalTime().toString(), "type", source.getEventType(), "project", source.getProjectName(),
+                            "materialCode", source.getMaterialCode(), "material", source.getMaterialName(), "category", source.getMaterialCategory(),
+                            "areaCode", source.getAreaId(), "zoneCode", source.getAreaId(), "area", source.getAreaName(), "zone", source.getAreaName(),
+                            "severity", source.getSeverity(), "status", source.getHandlingStatus(), "owner", source.getOwner(),
+                            "responseMinutes", source.getResponseMinutes(), "slaHours", number(source.getSlaHours()),
+                            "closedAt", closed == null ? null : closed.toString(), "durationMinutes", duration,
+                            "durationHours", duration == null ? null : duration / 60d,
+                            "slaBreached", Boolean.TRUE.equals(source.getIsSlaBreached()), "rootCause", source.getRootCause(), "action", source.getActionTaken());
+                })
+                .collect(Collectors.toList());
     }
 
     private Map<String, Object> dailyMap(WarehouseDailyMetric row) {
@@ -522,6 +602,7 @@ public class WarehouseDataService {
     private static int sumInt(List<? extends DailyMetric> rows, ToIntFunction<DailyMetric> mapper) { return rows.stream().mapToInt(mapper).sum(); }
     private static double average(List<? extends DailyMetric> rows, ToDoubleFunction<DailyMetric> mapper) { return rows.stream().mapToDouble(mapper).average().orElse(0); }
     private static double relative(double current, double previous) { return previous == 0 ? 0 : (current - previous) / previous * 100; }
+
 
     private static Map<String, Object> mapOf(Object... pairs) {
         Map<String, Object> map = new LinkedHashMap<>();
