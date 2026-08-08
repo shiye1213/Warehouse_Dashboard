@@ -158,8 +158,19 @@ body { background: #10141f; }
 .cyan-line { filter: drop-shadow(0 0 6px rgba(224, 173, 63, .4)); }
 .purple-line { filter: drop-shadow(0 0 5px rgba(169, 201, 137, .32)); }
 .mint-line { filter: drop-shadow(0 0 6px rgba(165, 199, 123, .35)); }
-.gridlines path { stroke: rgba(224, 208, 164, .08); }
-.axis text { fill: #AFA791; }
+.gridlines path { stroke: rgba(224, 208, 164, .22); }
+.axis path {
+  stroke: rgba(225, 218, 177, .8);
+  stroke-width: 1.2;
+  stroke-dasharray: none;
+}
+.axis text {
+  fill: #ecd9a6;
+  font-size: 12px;
+  font-weight: 700;
+  paint-order: normal;
+  stroke: none;
+}
 .chart-3d-grid path { stroke: rgba(224, 208, 164, .06); }
 
 #area30 stop { stop-color: #E0AD3F; }
@@ -203,9 +214,33 @@ body { background: #10141f; }
 
 /* 折线图左右留白加大，纵轴数值避开流光环 */
 .chart {
-  margin-left: 16px;
-  margin-right: 16px;
-  width: calc(100% - 32px);
+  margin-left: 30px;
+  margin-right: 14px;
+  width: calc(100% - 44px);
+}
+/* 左栏每日箱盒流量：稍微左移 */
+.left-column .flow-card .chart {
+  margin-left: 26px;
+}
+/* 库存图纵轴数值更宽，加大左侧留白 */
+.stock-chart {
+  margin-left: 36px;
+  width: calc(100% - 50px);
+}
+/* 右侧库存卡已去掉 stock-number，柱状图占满卡片高度 */
+.right-column .stock-chart {
+  height: 164px;
+  margin-top: 6px;
+  margin-left: 34px;
+  width: calc(100% - 48px);
+}
+/* 柱状图专用：去掉大左间距整体左移、加高占满卡片 */
+.stock-chart.bars-chart {
+  margin-left: 14px;
+  margin-right: 6px;
+  width: calc(100% - 20px);
+  margin-top: 4px;
+  height: 160px;
 }
 
 /* 右侧近12个月出入库的累计入库/出库：与左侧一致的上浮高亮，但不跳转 */
@@ -214,6 +249,15 @@ body { background: #10141f; }
   transition: transform .2s ease, border-color .2s ease, background-color .2s ease;
 }
 .right-column .metric-box:hover {
+  transform: translateY(-2px);
+  border-color: rgba(235, 218, 173, .4);
+  background-color: rgba(208, 200, 158, .1);
+}
+/* 左栏近31天出入库的累计入库/出库：与右栏一致的上浮高亮 */
+.left-column .metric-box {
+  transition: transform .2s ease, border-color .2s ease, background-color .2s ease;
+}
+.left-column .metric-box:hover {
   transform: translateY(-2px);
   border-color: rgba(235, 218, 173, .4);
   background-color: rgba(208, 200, 158, .1);
@@ -328,6 +372,24 @@ svg.stock-chart path[fill^="url(#stockFill)"] {
 .line-point.入库 { fill: #E0AD3F; }
 .line-point.出库 { fill: #A9C989; }
 .line-point.库存 { fill: #A5C77B; }
+
+/* 完货与异常：行高统一、去掉轨道上下空白，实现连续圆筒循环 */
+.order-row--active { min-height: 53px; }
+.order-roller-track { padding-top: 0 !important; padding-bottom: 0 !important; }
+/* 周均库存 3D 柱：轻微投影 + 入场动画 */
+.bar-3d {
+  filter: drop-shadow(1px 2px 3px rgba(0, 0, 0, .22)) drop-shadow(0 0 2px rgba(255, 199, 93, .22));
+  transform-box: fill-box;
+  transform-origin: bottom;
+  animation: bar-rise .7s cubic-bezier(.2, .75, .25, 1) both;
+}
+.bar-3d:hover {
+  filter: drop-shadow(1px 2px 3px rgba(0, 0, 0, .22)) drop-shadow(0 0 8px rgba(255, 199, 93, .5));
+}
+@keyframes bar-rise {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
 
 /* 箱盒库看板：箱子图标立体感 + 运营指挥中心侧边栏 */
 .cube-icon {

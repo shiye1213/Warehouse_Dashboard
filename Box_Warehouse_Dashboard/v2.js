@@ -1,5 +1,6 @@
 const cards = document.querySelectorAll('.glass, .glass-strong');
 cards.forEach((card) => {
+  if (card.classList.contains('hero-kpis')) return; // 跳过 hero 指标卡容器，避免 backdrop 打乱 nth-child 索引
   if (!card.firstElementChild || !card.firstElementChild.classList.contains('backdrop')) {
     const backdrop = document.createElement('div');
     backdrop.className = 'backdrop';
@@ -35,9 +36,10 @@ const detailLinks = [
   ['.hero-kpis > div:nth-child(4)', 'inventory'],
   ['.hero-kpis > div:nth-child(5)', 'inventory'],
   ['.hero-kpis > div:nth-child(6)', 'exceptions'],
-  ['.left-column .metric-box:nth-child(1)', 'inbound'],
-  ['.left-column .metric-box:nth-child(2)', 'outbound'],
+  ['.left-column .flow-card', 'inbound'],
   ['.left-column .stock-card', 'inventory'],
+  ['.analysis-card', 'inventory'],
+  ['.right-column .flow-card', 'performance'],
   ['.right-column .stock-card', 'monthly'],
   ['.operation-grid .task-pane:nth-child(1)', 'inbound'],
   ['.operation-grid .task-pane:nth-child(2)', 'outbound'],
@@ -45,11 +47,12 @@ const detailLinks = [
 ];
 
 const vueRoutes = {
-  inbound: '/operations',
-  outbound: '/operations',
-  inventory: '/zones/PK-P01',
-  monthly: '/zones/PK-P01',
-  exceptions: '/exceptions',
+  inbound: '/operations?warehouse=箱盒库&range=31',
+  outbound: '/operations?warehouse=箱盒库&range=31',
+  inventory: '/zones?warehouse=箱盒库',
+  monthly: '/zones?warehouse=箱盒库',
+  exceptions: '/exceptions?warehouse=箱盒库',
+  performance: '/performance?warehouse=箱盒库',
 };
 const openDetail = (view) => {
   const route = vueRoutes[view] || vueRoutes.inventory;
@@ -125,8 +128,16 @@ document.body.appendChild(dataTooltip);
 const showDataTooltip = (text, event) => {
   dataTooltip.textContent = text;
   dataTooltip.hidden = false;
-  dataTooltip.style.left = `${event.clientX + 14}px`;
-  dataTooltip.style.top = `${event.clientY - 12}px`;
+  const width = dataTooltip.offsetWidth;
+  const height = dataTooltip.offsetHeight;
+  const margin = 8;
+  let left = event.clientX + 14;
+  if (left + width > window.innerWidth - margin) left = event.clientX - width - 14;
+  let top = event.clientY - 12;
+  if (top < margin) top = event.clientY + 18;
+  if (top + height > window.innerHeight - margin) top = Math.max(margin, window.innerHeight - height - margin);
+  dataTooltip.style.left = `${Math.max(margin, left)}px`;
+  dataTooltip.style.top = `${top}px`;
 };
 const hideDataTooltip = () => { dataTooltip.hidden = true; };
 const nearestPoint = (points, svg, event) => {
@@ -205,11 +216,22 @@ function animateChartEntrance() {
   });
 }
 window.requestAnimationFrame(animateChartEntrance);
+function attachBarTooltips() {
+  document.querySelectorAll('.bar-3d').forEach((bar) => {
+    const range = bar.dataset.range || '';
+    const value = Number(bar.dataset.value || 0);
+    bar.addEventListener('mouseenter', (event) => showDataTooltip(`周均库存 ${range} · ${value.toLocaleString()} 个`, event));
+    bar.addEventListener('mousemove', (event) => showDataTooltip(dataTooltip.textContent, event));
+    bar.addEventListener('mouseleave', hideDataTooltip);
+  });
+}
+attachBarTooltips();
 window.addEventListener('box-warehouse:data-loaded', () => {
   buildThreeDimensionalLines();
   buildLinePoints();
   animateChartEntrance();
   animateValueCounts();
+  attachBarTooltips();
 });
 function animateTaskTables() {
   const panes = [];
@@ -231,19 +253,24 @@ function animateTaskTables() {
       bodyTable.appendChild(body.cloneNode(true));
       return bodyTable;
     };
-    track.append(createBodyTable(), createBodyTable(), createBodyTable());
+    for (let index = 0; index < 6; index += 1) track.append(createBodyTable());
     viewport.appendChild(track);
     table.replaceWith(headerTable, viewport);
     panes.push({ track, distance: track.firstElementChild.getBoundingClientRect().height || 244 });
   });
   if (!panes.length) return;
-  const duration = 18000;
+  const duration = 7000;
   let startTime = null;
   const scrollRows = (timestamp) => {
     if (startTime === null) startTime = timestamp;
     const progress = ((timestamp - startTime) % duration) / duration;
-    panes.forEach(({ track, distance }) => {
-      track.style.transform = `translateY(${-progress * distance}px)`;
+    panes.forEach((pane) => {
+      const kids = pane.track.children;
+      let measured = 0;
+      if (kids.length > 1) measured = kids[1].offsetTop - kids[0].offsetTop;
+      else if (kids.length === 1) measured = kids[0].getBoundingClientRect().height;
+      if (measured > 0 && measured !== pane.distance) pane.distance = measured;
+      pane.track.style.transform = `translateY(${-progress * pane.distance}px)`;
     });
     window.requestAnimationFrame(scrollRows);
   };
@@ -291,33 +318,57 @@ function animateValueCounts() {
     requestAnimationFrame(tick);
   });
 }
-setTimeout(animateValueCounts, 350);
+// 数字滚动动画已停用：真实数据由 live-data.js 直接渲染，避免加载时数值滚动造成“随机/变化”的错觉。
+// setTimeout(animateValueCounts, 350);
 
 const orderRoller = document.querySelector('.order-roller');
 const orderRollerTrack = document.querySelector('.order-roller-track');
 if (orderRoller && orderRollerTrack) {
-  const rollerRows = [...orderRollerTrack.querySelectorAll('.order-row')];
-  const rowStep = 59;
-  const cycleDistance = rowStep * Math.max(rollerRows.length - 1, 1);
-  const cycleDuration = 14000;
+  const cycleDuration = 16000;
   let cycleStart = null;
-  const animateRoller = (timestamp) => {
-    if (cycleStart === null) cycleStart = timestamp;
+  let hadRows = false;
+  let setHeight = 0;
+
+  const ensureSeamless = () => {
+    orderRollerTrack.querySelectorAll('.order-row[data-loop]').forEach((node) => node.remove());
+    const base = [...orderRollerTrack.querySelectorAll('.order-row')];
+    if (!base.length) return;
+    const rowHeight = base[0].offsetHeight || 53;
+    setHeight = rowHeight * base.length;
+    const viewportHeight = orderRoller.clientHeight || 280;
+    const copies = Math.max(2, Math.ceil((viewportHeight + setHeight) / setHeight) + 1);
+    for (let copy = 0; copy < copies; copy += 1) {
+      base.forEach((row) => {
+        const clone = row.cloneNode(true);
+        clone.setAttribute('data-loop', 'clone');
+        orderRollerTrack.appendChild(clone);
+      });
+    }
+  };
+
+  const tick = (timestamp) => {
+    const rows = [...orderRollerTrack.querySelectorAll('.order-row')];
+    if (!rows.length) { hadRows = false; window.requestAnimationFrame(tick); return; }
+    const hasClones = rows.some((row) => row.getAttribute('data-loop') === 'clone');
+    if (!hasClones) ensureSeamless();
+    if (!hadRows) { cycleStart = timestamp; hadRows = true; }
     const progress = ((timestamp - cycleStart) % cycleDuration) / cycleDuration;
-    const offset = -progress * cycleDistance;
+    const offset = -(progress * setHeight);
     orderRollerTrack.style.transform = `translateY(${offset}px)`;
+    const liveRows = [...orderRollerTrack.querySelectorAll('.order-row')];
     const center = orderRoller.clientHeight / 2;
     let closestIndex = 0;
     let closestDistance = Infinity;
-    rollerRows.forEach((row, index) => {
+    liveRows.forEach((row, index) => {
       const rowCenter = row.offsetTop + row.offsetHeight / 2 + offset;
-      const distance = Math.abs(rowCenter - center);
-      if (distance < closestDistance) { closestDistance = distance; closestIndex = index; }
+      const distanceToCenter = Math.abs(rowCenter - center);
+      if (distanceToCenter < closestDistance) { closestDistance = distanceToCenter; closestIndex = index; }
     });
-    rollerRows.forEach((row, index) => row.classList.toggle('order-row--active', index === closestIndex));
-    window.requestAnimationFrame(animateRoller);
+    liveRows.forEach((row, index) => row.classList.toggle('order-row--active', index === closestIndex));
+    window.requestAnimationFrame(tick);
   };
-  window.requestAnimationFrame(animateRoller);
+  ensureSeamless();
+  window.requestAnimationFrame(tick);
 }
 
 // 运营指挥中心侧边栏：点击左上角箱子图标弹出

@@ -1,5 +1,10 @@
 (function renderBoxWarehouseDatabaseData() {
   const format = (value, digits = 0) => Number(value || 0).toLocaleString('zh-CN', { maximumFractionDigits: digits });
+  const compact = (value) => {
+    const v = Number(value || 0);
+    if (v >= 1000) return Math.round(v / 1000) + 'k';
+    return String(Math.round(v));
+  };
   const percent = (value, digits = 1) => (Number(value || 0) * 100).toFixed(digits) + '%';
   const sum = (rows, key) => rows.reduce((total, row) => total + Number(row[key] || 0), 0);
   const average = (rows, key) => rows.length ? sum(rows, key) / rows.length : 0;
@@ -48,6 +53,19 @@
       const rowIndex = Math.round(index * (rows.length - 1) / Math.max(xTexts.length - 1, 1));
       node.textContent = String(rows[rowIndex]?.date || '').slice(5);
     });
+    if (!chart.querySelector('.gridlines > path')) {
+      const ns = 'http://www.w3.org/2000/svg';
+      let gl = chart.querySelector('g.gridlines');
+      if (!gl) {
+        gl = document.createElementNS(ns, 'g');
+        gl.setAttribute('class', 'gridlines');
+        const anchor = chart.querySelector('.chart-3d-grid');
+        chart.insertBefore(gl, anchor ? anchor.nextSibling : chart.firstChild);
+      }
+      const path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', yTexts.map((node) => `M18 ${Number(node.getAttribute('y')) - 3}H390`).join(''));
+      gl.appendChild(path);
+    }
   };
   const setChart = (chart, rows, firstKey, secondKey, base = 120, valueFormatter = (value) => format(value)) => {
     if (!chart || !rows.length) return;
@@ -69,9 +87,151 @@
     }
     const area = chart.querySelector('.area, .monthly-area, path[fill^="url"]');
     if (area) area.setAttribute('d', 'M' + first.replaceAll(' ', 'L') + 'V' + base + 'H18Z');
-    updateAxis(chart, rows, secondKey ? [firstKey, secondKey] : [firstKey], base, valueFormatter);
+    updateAxis(chart, rows, secondKey ? [firstKey, secondKey] : [firstKey], base, valueFormatter, scaleMax);
     delete chart.dataset.threeDimensional;
     chart.querySelectorAll('.line-3d-geometry, .line-point').forEach((node) => node.remove());
+  };
+  const buildStockBars = (chart, rows) => {
+    if (!chart || !rows.length) return;
+    const ns = 'http://www.w3.org/2000/svg';
+    chart.classList.add('bars-chart');
+    const rect = chart.getBoundingClientRect();
+    const elW = rect.width || 378;
+    const elH = rect.height || 170;
+    const vh = Math.max(120, Math.round(400 * elH / elW));
+    chart.setAttribute('viewBox', `0 0 400 ${vh}`);
+    const top = 10;
+    const base = vh - 16;
+    const weeks = 5;
+    const chunk = Math.ceil(rows.length / weeks);
+    const bars = [];
+    for (let w = 0; w < weeks; w += 1) {
+      const slice = rows.slice(w * chunk, (w + 1) * chunk);
+      if (!slice.length) break;
+      const value = slice.reduce((s, row) => s + Number(row.stock || 0), 0) / slice.length;
+      const start = String(slice[0].date).slice(5);
+      const end = String(slice[slice.length - 1].date).slice(5);
+      bars.push({ label: start, range: start + ' ~ ' + end, value });
+    }
+    chart.querySelectorAll('.bar-3d, .net-bar, .line, .area, .monthly-area, .line-3d-geometry, .line-point, path[fill^="url"], .axis, .gridlines, .chart-3d-grid').forEach((el) => el.remove());
+    let defs = chart.querySelector('defs');
+    if (!defs) {
+      defs = document.createElementNS(ns, 'defs');
+      chart.insertBefore(defs, chart.firstChild);
+    }
+    let frontGrad = chart.querySelector('#boxBarFront');
+    if (!frontGrad) {
+      frontGrad = document.createElementNS(ns, 'linearGradient');
+      frontGrad.setAttribute('id', 'boxBarFront');
+      frontGrad.setAttribute('x1', '0'); frontGrad.setAttribute('y1', '0'); frontGrad.setAttribute('x2', '0'); frontGrad.setAttribute('y2', '1');
+      const fs1 = document.createElementNS(ns, 'stop'); fs1.setAttribute('offset', '0'); fs1.setAttribute('stop-color', '#f0c66b');
+      const fs2 = document.createElementNS(ns, 'stop'); fs2.setAttribute('offset', '1'); fs2.setAttribute('stop-color', '#dba544');
+      frontGrad.append(fs1, fs2);
+      defs.appendChild(frontGrad);
+    }
+    const maxVal = Math.max.apply(null, bars.map((b) => b.value).concat([1]));
+    const plotLeft = 54;
+    const plotRight = 366;
+    const gap = 34;
+    const vAxisX = 46;
+    const barWidth = (plotRight - plotLeft - gap * (bars.length - 1)) / bars.length;
+    const depth = 5;
+    const ySteps = 4;
+    for (let i = 0; i <= ySteps; i += 1) {
+      const gy = top + (base - top) * i / ySteps;
+      const line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', String(vAxisX));
+      line.setAttribute('y1', String(gy));
+      line.setAttribute('x2', String(plotRight));
+      line.setAttribute('y2', String(gy));
+      line.setAttribute('stroke', 'rgba(224, 208, 164, .22)');
+      line.setAttribute('stroke-width', '1');
+      line.setAttribute('stroke-dasharray', '4 7');
+      chart.appendChild(line);
+    }
+    const vAxis = document.createElementNS(ns, 'line');
+    vAxis.setAttribute('x1', String(vAxisX));
+    vAxis.setAttribute('y1', String(top));
+    vAxis.setAttribute('x2', String(vAxisX));
+    vAxis.setAttribute('y2', String(base));
+    vAxis.setAttribute('stroke', 'rgba(225, 218, 177, .8)');
+    vAxis.setAttribute('stroke-width', '1.2');
+    chart.appendChild(vAxis);
+    const depthX = 6;
+    const depthY = -5;
+    const dGrid = document.createElementNS(ns, 'g');
+    dGrid.setAttribute('class', 'chart-3d-grid');
+    const dGridBack = document.createElementNS(ns, 'path');
+    dGridBack.setAttribute('d', `M${vAxisX + depthX} ${top + depthY} V${base + depthY} H${plotRight}`);
+    const dGridAx1 = document.createElementNS(ns, 'path');
+    dGridAx1.setAttribute('d', `M${vAxisX} ${base} L${vAxisX + depthX} ${base + depthY}`);
+    const dGridAx2 = document.createElementNS(ns, 'path');
+    dGridAx2.setAttribute('d', `M${vAxisX} ${top} L${vAxisX + depthX} ${top + depthY}`);
+    const dGridFloor = document.createElementNS(ns, 'path');
+    dGridFloor.setAttribute('d', `M${vAxisX} ${base} L${vAxisX + depthX} ${base + depthY} H${plotRight}`);
+    [dGridBack, dGridAx1, dGridAx2, dGridFloor].forEach((path) => {
+      path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', 'rgba(224, 208, 164, .16)');
+      path.setAttribute('stroke-width', '1');
+      dGrid.appendChild(path);
+    });
+    chart.appendChild(dGrid);
+    bars.forEach((item, index) => {
+      const x = plotLeft + index * (barWidth + gap);
+      const h = Math.max(1, item.value / maxVal * (base - top));
+      const y = base - h;
+      const g = document.createElementNS(ns, 'g');
+      g.setAttribute('class', 'bar-3d');
+      g.setAttribute('style', 'animation-delay: ' + (index * 0.06) + 's');
+      g.setAttribute('data-range', item.range);
+      g.setAttribute('data-value', String(Math.round(item.value)));
+      const side = document.createElementNS(ns, 'polygon');
+      side.setAttribute('points', `${x + barWidth},${y} ${x + barWidth + depth},${y - depth} ${x + barWidth + depth},${base - depth} ${x + barWidth},${base}`);
+      side.setAttribute('fill', 'rgba(140, 98, 48, .3)');
+      const topFace = document.createElementNS(ns, 'polygon');
+      topFace.setAttribute('points', `${x},${y} ${x + depth},${y - depth} ${x + barWidth + depth},${y - depth} ${x + barWidth},${y}`);
+      topFace.setAttribute('fill', 'rgba(244, 216, 150, .72)');
+      const front = document.createElementNS(ns, 'rect');
+      front.setAttribute('x', x);
+      front.setAttribute('y', y);
+      front.setAttribute('width', barWidth);
+      front.setAttribute('height', h);
+      front.setAttribute('fill', 'url(#boxBarFront)');
+      front.setAttribute('opacity', '0.72');
+      g.append(topFace, side, front);
+      chart.appendChild(g);
+    });
+    const baseline = document.createElementNS(ns, 'line');
+    baseline.setAttribute('x1', String(vAxisX));
+    baseline.setAttribute('y1', String(base));
+    baseline.setAttribute('x2', String(plotRight));
+    baseline.setAttribute('y2', String(base));
+    baseline.setAttribute('stroke', 'rgba(224, 208, 164, .35)');
+    baseline.setAttribute('stroke-width', '1');
+    chart.appendChild(baseline);
+    const axisGroup = document.createElementNS(ns, 'g');
+    axisGroup.setAttribute('class', 'axis');
+    for (let i = 0; i <= ySteps; i += 1) {
+      const ratio = i / ySteps;
+      const label = document.createElementNS(ns, 'text');
+      label.setAttribute('x', '38');
+      label.setAttribute('y', String(top + (base - top) * ratio + 3));
+      label.setAttribute('text-anchor', 'end');
+      label.textContent = compact(maxVal * (1 - ratio));
+      axisGroup.appendChild(label);
+    }
+    bars.forEach((item, index) => {
+      const x = plotLeft + index * (barWidth + gap);
+      const cx = x + barWidth / 2;
+      const label = document.createElementNS(ns, 'text');
+      label.setAttribute('x', String(cx));
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('y', String(base + 12));
+      label.textContent = item.label;
+      axisGroup.appendChild(label);
+    });
+    chart.appendChild(axisGroup);
+    chart.dataset.threeDimensional = 'true';
   };
   const polarPoint = (angle, radius) => {
     const radians = (angle - 90) * Math.PI / 180;
@@ -112,15 +272,11 @@
   const renderOperations = (operations, data) => {
     const targetReceipt = targetValue(data, 'receivingTimely', 0);
     const targetDelivery = targetValue(data, 'deliveryTimely', 0);
+    const inboundAll = operations.filter((row) => Number(row.inboundQty || 0) > 0).sort((a, b) => Number(b.inboundQty) - Number(a.inboundQty));
+    const outboundAll = operations.filter((row) => Number(row.outboundQty || 0) > 0).sort((a, b) => Number(b.outboundQty) - Number(a.outboundQty));
     const groups = [
-      {
-        rows: operations.filter((row) => Number(row.inboundQty || 0) > 0).sort((a, b) => Number(b.inboundQty) - Number(a.inboundQty)).slice(0, 4),
-        qty: 'inboundQty', orders: 'inboundOrders', timely: 'receiptTimely', target: targetReceipt,
-      },
-      {
-        rows: operations.filter((row) => Number(row.outboundQty || 0) > 0).sort((a, b) => Number(b.outboundQty) - Number(a.outboundQty)).slice(0, 4),
-        qty: 'outboundQty', orders: 'outboundOrders', timely: 'deliveryTimely', target: targetDelivery,
-      },
+      { rows: inboundAll.slice(0, 4), qty: 'inboundQty', orders: 'inboundOrders', timely: 'receiptTimely', target: targetReceipt, all: inboundAll },
+      { rows: outboundAll.slice(0, 4), qty: 'outboundQty', orders: 'outboundOrders', timely: 'deliveryTimely', target: targetDelivery, all: outboundAll },
     ];
     document.querySelectorAll('.task-pane').forEach((pane, paneIndex) => {
       const group = groups[paneIndex];
@@ -132,7 +288,7 @@
       }).join('');
       pane.querySelectorAll('thead').forEach((node) => { node.innerHTML = header; });
       pane.querySelectorAll('tbody').forEach((node) => { node.innerHTML = rows || '<tr><td colspan="5">最新业务日无作业记录</td></tr>'; });
-      setText('.task-pane:nth-child(' + (paneIndex + 1) + ') .task-title em', format(sum(group.rows, group.orders)) + ' 单');
+      setText('.task-pane:nth-child(' + (paneIndex + 1) + ') .task-title em', format(sum(group.all, group.orders)) + ' 单');
     });
   };
   const renderAlerts = (alerts) => {
@@ -140,9 +296,9 @@
     setText('.order-card .pill', open.length + ' 条未关闭');
     const track = document.querySelector('.order-roller-track');
     if (!track) return;
-    track.innerHTML = alerts.slice(0, 6).map((row, index) => {
+    track.innerHTML = alerts.slice(0, 6).map((row) => {
       const tone = row.status === '已关闭' ? 'done' : row.status === '处理中' ? 'doing' : 'waiting';
-      return '<div class="order-row ' + (index % 2 ? '' : 'order-row--active') + '" role="listitem"><span class="order-row__code">' + escapeHtml(row.id) + '</span><span class="order-row__item">' + escapeHtml(row.type) + '<small>' + escapeHtml(row.area || row.zone || row.project || '未分区') + '</small></span><span class="state ' + tone + '">' + escapeHtml(row.status) + '</span><time>' + format(row.durationMinutes || row.responseMinutes) + 'm</time></div>';
+      return '<div class="order-row" role="listitem"><span class="order-row__code">' + escapeHtml(row.id) + '</span><span class="order-row__item">' + escapeHtml(row.type) + '<small>' + escapeHtml(row.area || row.zone || row.project || '未分区') + '</small></span><span class="state ' + tone + '">' + escapeHtml(row.status) + '</span><time>' + format(row.durationMinutes || row.responseMinutes) + 'm</time></div>';
     }).join('') || '<div class="order-row"><span class="order-row__item">当前无异常记录</span></div>';
   };
   const clearExampleValues = () => {
@@ -153,7 +309,7 @@
     });
     document.querySelectorAll('.task-pane tbody').forEach((node) => { node.innerHTML = '<tr><td colspan="5">正在读取数据库…</td></tr>'; });
     setText('.order-roller-track', '正在读取数据库…');
-    setText('.top-status .online', '● 正在连接数据库');
+    setMain('.top-status .online', '正在连接数据库');
   };
   const render = (data) => {
     const daily = data.daily || [];
@@ -185,12 +341,12 @@
     const inventoryTotal = Math.max(outerQty + innerQty, 1);
     const coverageDays = average(daily, 'packagingOutbound') ? onHand / average(daily, 'packagingOutbound') : 0;
     setText('.left-column .flow-card .panel-head small', '近 ' + daily.length + ' 天 · 数据库作业量');
-    setText('.left-column .flow-card .pill', netChange >= 0 ? '净入库' : '净出库');
+    setText('.left-column .flow-card .pill', (netChange >= 0 ? '净入库 +' : '净出库 -') + format(Math.abs(netChange)));
     setMetric('.left-column .metric-box:nth-child(1)', format(totalInbound), format(inboundOrders) + ' 单', formatDelta(inboundDelta));
     setMetric('.left-column .metric-box:nth-child(2)', format(totalOutbound), format(outboundOrders) + ' 单', formatDelta(outboundDelta));
     setHtml('.left-column .stock-card .mini-stat', '净变化 <b>' + (netChange >= 0 ? '+' : '') + format(netChange) + '</b>');
     setMain('.left-column .stock-number strong', format(onHand));
-    setText('.analysis-card .pill', percent(capacity ? occupied / capacity : 0));
+    setText('.analysis-card .pill', '库位占用 ' + percent(capacity ? occupied / capacity : 0));
     setText('.ring-label b', percent(capacity ? occupied / capacity : 0));
     setHtml('.ring-wrap p', '<i></i>已用 ' + format(occupied) + ' <i class="free"></i>可用 ' + format(available));
     const ring = document.querySelector('.ring-3d');
@@ -218,32 +374,35 @@
     setText('.operation-card .ops-summary span:nth-child(1) b', format(latest.pickingTasks || latest.picking));
     setText('.operation-card .ops-summary span:nth-child(2) b', format(latest.forkliftTasks));
     setText('.operation-card .ops-summary span:nth-child(3) b', percent(latest.deliveryTimely, 2));
-    setText('.hero-badges span:nth-child(1)', zones.length + ' 个库区');
-    setText('.hero-badges span:nth-child(2)', stocks.length + ' 种物料');
-    setText('.hero-badges span:nth-child(3)', '数据库实时');
+    setMain('.hero-badges span:nth-child(1)', zones.length + ' 个库区');
+    setMain('.hero-badges span:nth-child(2)', stocks.length + ' 种物料');
+    const thirdBadge = document.querySelector('.hero-badges span:nth-child(3)');
+    if (thirdBadge) thirdBadge.style.display = 'none';
     setText('.right-column .flow-card .panel-head small', '近 ' + daily.length + ' 天 · 质量指标');
     setText('.right-column .flow-card h2', '质量与履约趋势');
-    setText('.right-column .flow-card .pill', '数据库实测');
+    const accMet = average(daily, 'inventoryAccuracy') >= targetValue(data, 'inventoryAccuracy', 0);
+    const timelyMet = average(daily, 'deliveryTimely') >= targetValue(data, 'deliveryTimely', 0);
+    setText('.right-column .flow-card .pill', accMet && timelyMet ? '达标' : '需关注');
     setText('.right-column .flow-card .metric-box:nth-child(1) span', '库存准确率');
     setText('.right-column .flow-card .metric-box:nth-child(2) span', '出库及时率');
     setMetric('.right-column .metric-box:nth-child(1)', percent(average(daily, 'inventoryAccuracy')), '期间均值', '目标 ' + percent(targetValue(data, 'inventoryAccuracy', 0)));
     setMetric('.right-column .metric-box:nth-child(2)', percent(average(daily, 'deliveryTimely')), '期间均值', '目标 ' + percent(targetValue(data, 'deliveryTimely', 0)));
     setText('.right-column .flow-card .chart-title b', '每日质量走势');
     setHtml('.right-column .flow-card .chart-title span', '<i class="cyan"></i>库存准确 <i class="purple"></i>出库及时');
-    setText('.right-column .stock-card .panel-head small', '近 ' + daily.length + ' 天 · 日末库存');
-    setText('.right-column .stock-card h2', '库存与覆盖天数');
+    setText('.right-column .stock-card .panel-head small', '近 ' + daily.length + ' 天 · 周均库存');
+    setText('.right-column .stock-card h2', '库存概况');
     setHtml('.right-column .stock-card .mini-stat', '覆盖 <b>' + format(coverageDays, 1) + '<small>天</small></b>');
-    setText('.right-column .stock-number span', '最新库存');
-    setMain('.right-column .stock-number strong', format(onHand));
+    const rightStockNumber = document.querySelector('.right-column .stock-number');
+    if (rightStockNumber) rightStockNumber.style.display = 'none';
     const charts = document.querySelectorAll('svg.chart');
     const history = stockHistory(daily, onHand);
-    setChart(charts[0], daily, 'packagingInbound', 'packagingOutbound');
-    setChart(charts[1], history, 'stock', null, 110);
+    setChart(charts[0], daily, 'packagingInbound', 'packagingOutbound', 120, compact);
+    setChart(charts[1], history, 'stock', null, 110, compact);
     setChart(charts[2], daily, 'inventoryAccuracy', 'deliveryTimely', 120, (value) => percent(value, 0));
-    setChart(charts[3], history, 'stock', null, 110);
+    buildStockBars(charts[3], history);
     renderOperations(operations, data);
     renderAlerts(alerts);
-    setText('.top-status .online', '● 数据库已连接');
+    setMain('.top-status .online', '数据库已连接');
     setText('.top-status small', '负责人 · ' + ((data.meta?.owners || []).join('、') || '未配置'));
     const clock = document.getElementById('clock');
     if (clock && data.meta?.latestDate) {
@@ -264,7 +423,7 @@
       render(await response.json());
     } catch (error) {
       clearCharts();
-      setText('.top-status .online', '● 数据库连接失败');
+      setMain('.top-status .online', '数据库连接失败');
       setText('.top-status small', '暂无可展示的业务数据');
       document.querySelectorAll('.task-pane tbody').forEach((node) => { node.innerHTML = '<tr><td colspan="5">数据库数据加载失败</td></tr>'; });
       setText('.order-roller-track', '数据库数据加载失败');

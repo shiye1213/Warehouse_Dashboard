@@ -1,5 +1,6 @@
 <script setup>
 import { computed, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   AlertTriangle, ArrowDownToLine, Boxes, CheckCircle2, ChevronRight, Clock3,
   Gauge, PackageCheck, Route, Timer, Truck,
@@ -12,7 +13,8 @@ import { formatNumber } from '../composables/useDashboard'
 import { useScopedDashboard } from '../composables/useWarehouseScope'
 
 const { snapshot, loading, error, refresh, selectedWarehouse, volumeUnit } = useScopedDashboard()
-const range = ref(14)
+const route = useRoute()
+const range = ref(Number(route.query.range) || 14)
 const rows = computed(() => (snapshot.value?.trend || []).slice(-range.value))
 const totals = computed(() => rows.value.reduce((result, row) => ({
   inbound: result.inbound + Number(row.inbound || 0),
