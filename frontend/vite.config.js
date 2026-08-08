@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 
 const projectRoot = fileURLToPath(new URL('..', import.meta.url))
 const boardRoot = path.resolve(projectRoot, 'Box_Warehouse_Dashboard')
+const apiTarget = process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8080'
+const backendProxy = { target: apiTarget, changeOrigin: true }
 
 function boxWarehouseBoard() {
   const contentTypes = {
@@ -46,10 +48,18 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:8080',
-        changeOrigin: true,
-      },
+      '/api': backendProxy,
+      '/v3/api-docs': backendProxy,
+      '/swagger-ui': backendProxy,
+      '/swagger-ui.html': backendProxy,
+    },
+  },
+  preview: {
+    proxy: {
+      '/api': backendProxy,
+      '/v3/api-docs': backendProxy,
+      '/swagger-ui': backendProxy,
+      '/swagger-ui.html': backendProxy,
     },
   },
 })

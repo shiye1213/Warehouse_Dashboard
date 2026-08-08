@@ -143,6 +143,7 @@ public class WarehouseDataService {
         result.put("openExceptions", openAlerts);
         result.put("inventory", inventory);
         result.put("stocks", stocks);
+        result.put("skuOperations", loadLatestSkuOperations(warehouseId));
         result.put("targets", targets.stream().map(this::targetMap).collect(Collectors.toList()));
         result.put("exceptionBreakdown", exceptionBreakdown(alertMaps));
         return Optional.of(result);
@@ -178,6 +179,38 @@ public class WarehouseDataService {
         return result;
     }
 
+    private List<Map<String, Object>> loadLatestSkuOperations(String warehouseId) {
+        List<SkuDailyMetricEntity> rows = skuDailyMetricMapper.selectList(
+                Wrappers.lambdaQuery(SkuDailyMetricEntity.class)
+                        .eq(SkuDailyMetricEntity::getWarehouseId, warehouseId)
+                        .orderByDesc(SkuDailyMetricEntity::getBizDate)
+                        .orderByAsc(SkuDailyMetricEntity::getProjectNo, SkuDailyMetricEntity::getMaterialCode));
+        if (rows.isEmpty()) return new ArrayList<>();
+        LocalDate latestDate = rows.get(0).getBizDate();
+        return rows.stream()
+                .filter(row -> latestDate.equals(row.getBizDate()))
+                .map(row -> mapOf(
+                        "date", row.getBizDate().toString(),
+                        "projectNo", row.getProjectNo(),
+                        "projectName", row.getProjectName(),
+                        "materialCode", row.getMaterialCode(),
+                        "materialName", row.getMaterialName(),
+                        "areaCode", row.getAreaId(),
+                        "areaName", row.getAreaName(),
+                        "uom", row.getUom(),
+                        "inboundOrders", row.getInboundOrderCount(),
+                        "inboundLines", row.getInboundLineCount(),
+                        "inboundQty", number(row.getInboundQty()),
+                        "outboundOrders", row.getOutboundOrderCount(),
+                        "outboundLines", row.getOutboundLineCount(),
+                        "outboundQty", number(row.getOutboundQty()),
+                        "pickingTasks", row.getPickingTaskCount(),
+                        "forkliftTasks", row.getForkliftTaskCount(),
+                        "receiptTimely", number(row.getReceiptTimelyRate()),
+                        "deliveryTimely", number(row.getDeliveryTimelyRate()),
+                        "exceptions", row.getExceptionCount()))
+                .collect(Collectors.toList());
+    }
     private List<WarehouseDailyMetric> loadWarehouseDaily(String warehouseId) {
         return warehouseDailyMetricMapper.selectList(Wrappers.lambdaQuery(WarehouseDailyMetricEntity.class)
                         .eq(warehouseId != null, WarehouseDailyMetricEntity::getWarehouseId, warehouseId).orderByAsc(WarehouseDailyMetricEntity::getBizDate, WarehouseDailyMetricEntity::getWarehouseId)).stream()

@@ -55,7 +55,8 @@ class DashboardApiTest {
         mvc.perform(get("/api/dashboard/warehouses/WH-PK04").param("range", "31"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.daily", hasSize(31)))
-                .andExpect(jsonPath("$.zones", hasSize(2)));
+                .andExpect(jsonPath("$.zones", hasSize(2)))
+                .andExpect(jsonPath("$.skuOperations", hasSize(greaterThan(0))));
     }
 
     @Test
@@ -97,6 +98,19 @@ class DashboardApiTest {
                 .andExpect(jsonPath("$.inventoryAgeRules").value(10))
                 .andExpect(jsonPath("$.inventoryAgeBatches").value(171))
                 .andExpect(jsonPath("$.inventoryAgeSkus").value(38));
+    }
+
+    @Test
+    void swaggerUiExposesAllControllerPaths() throws Exception {
+        mvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.info.title").value("仓库运营看板 API"))
+                .andExpect(jsonPath("$.paths['/api/dashboard/overview']").exists())
+                .andExpect(jsonPath("$.paths['/api/dashboard/warehouses/{warehouseId}']").exists())
+                .andExpect(jsonPath("$.paths['/api/data/import']").exists())
+                .andExpect(jsonPath("$.paths['/api/data/export']").exists());
+        mvc.perform(get("/swagger-ui.html"))
+                .andExpect(status().is3xxRedirection());
     }
 
     @Test

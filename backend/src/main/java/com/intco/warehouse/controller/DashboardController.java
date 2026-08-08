@@ -1,6 +1,8 @@
 package com.intco.warehouse.controller;
 
 import com.intco.warehouse.service.WarehouseDataService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.LinkedHashMap;
@@ -13,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+@Tag(name = "仓库看板", description = "原料库、成品库、箱盒库及库区看板查询接口")
 @RestController
 @RequestMapping("/api")
 public class DashboardController {
@@ -22,16 +25,19 @@ public class DashboardController {
         this.dataService = dataService;
     }
 
+    @Operation(summary = "查询全部仓库运营总览")
     @GetMapping("/dashboard/overview")
     public Map<String, Object> overview(@RequestParam(defaultValue = "31") int range) {
         return dataService.snapshot(range);
     }
 
+    @Operation(summary = "查询仓库主数据")
     @GetMapping("/warehouses")
     public List<Map<String, Object>> warehouses() {
         return dataService.warehouses();
     }
 
+    @Operation(summary = "查询指定仓库看板数据", description = "返回日趋势、库区、库存、异常、KPI 目标及最新 SKU 作业明细")
     @GetMapping("/dashboard/warehouses/{warehouseId}")
     public ResponseEntity<Map<String, Object>> warehouseDashboard(@PathVariable String warehouseId,
                                                                   @RequestParam(defaultValue = "31") int range) {
@@ -39,11 +45,13 @@ public class DashboardController {
                 .map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
 
+    @Operation(summary = "查询库区详情")
     @GetMapping("/zones/{code}")
     public ResponseEntity<Map<String, Object>> zone(@PathVariable String code) {
         return dataService.zoneDetail(code).map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
 
+    @Operation(summary = "查询服务健康状态")
     @GetMapping("/health")
     public Map<String, Object> health() {
         Map<String, Object> response = new LinkedHashMap<>();
