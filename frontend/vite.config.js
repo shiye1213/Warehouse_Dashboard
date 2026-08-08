@@ -4,8 +4,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url))
-const boardRoot = path.resolve(projectRoot, 'Box_Warehouse_Dashboard')
+const boardRoot = fileURLToPath(new URL('./Box_Warehouse_Dashboard', import.meta.url))
 const apiTarget = process.env.VITE_API_PROXY_TARGET || 'http://127.0.0.1:8080'
 const backendProxy = { target: apiTarget, changeOrigin: true }
 
