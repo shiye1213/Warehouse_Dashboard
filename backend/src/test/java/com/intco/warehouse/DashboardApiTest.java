@@ -11,7 +11,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.intco.warehouse.entity.WarehouseDailyMetricEntity;
+import com.intco.warehouse.mapper.WarehouseDailyMetricMapper;
 import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.junit.jupiter.api.Test;
@@ -29,6 +34,9 @@ import org.springframework.test.web.servlet.MockMvc;
 class DashboardApiTest {
     @Autowired
     private MockMvc mvc;
+
+    @Autowired
+    private WarehouseDailyMetricMapper warehouseDailyMetricMapper;
 
     @Test
     void overviewExposesExecutiveSummaryAndDetails() throws Exception {
@@ -57,6 +65,23 @@ class DashboardApiTest {
                 .andExpect(jsonPath("$.daily", hasSize(31)))
                 .andExpect(jsonPath("$.zones", hasSize(2)))
                 .andExpect(jsonPath("$.skuOperations", hasSize(greaterThan(0))));
+    }
+
+    @Test
+    @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+    void rawMaterialDashboardReflectsMybatisPlusDatabaseChanges() throws Exception {
+        BigDecimal databaseValue = new BigDecimal("123.4567");
+        int updatedRows = warehouseDailyMetricMapper.update(null,
+                Wrappers.lambdaUpdate(WarehouseDailyMetricEntity.class)
+                        .eq(WarehouseDailyMetricEntity::getWarehouseId, "WH-RM01")
+                        .eq(WarehouseDailyMetricEntity::getBizDate, LocalDate.of(2026, 7, 31))
+                        .set(WarehouseDailyMetricEntity::getRawInboundTon, databaseValue));
+
+        assertEquals(1, updatedRows);
+        mvc.perform(get("/api/dashboard/warehouses/WH-RM01").param("range", "31"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.summary.todayRawInbound").value(databaseValue.doubleValue()))
+                .andExpect(jsonPath("$.trend[30].rawInbound").value(databaseValue.doubleValue()));
     }
 
     @Test
