@@ -34,3 +34,5 @@ mybatis-plus:
 warehouse:
   cors-origins: http://127.0.0.1:5173,http://localhost:5173
   seed-enabled: ${WAREHOUSE_SEED_ENABLED:true}
+  query-concurrency: ${WAREHOUSE_QUERY_CONCURRENCY:6}
+  query-queue-capacity: ${WAREHOUSE_QUERY_QUEUE_CAPACITY:100}

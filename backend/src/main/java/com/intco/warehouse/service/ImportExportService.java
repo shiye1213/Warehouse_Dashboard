@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import org.apache.poi.ss.usermodel.BorderStyle;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -38,11 +39,14 @@ public class ImportExportService {
     private final WarehouseImportService importService;
     private final WarehouseDataService dataService;
     private final EntityExportService entityExportService;
+    private final ConcurrentQueryExecutor queryExecutor;
 
-    public ImportExportService(WarehouseImportService importService, WarehouseDataService dataService, EntityExportService entityExportService) {
+    public ImportExportService(WarehouseImportService importService, WarehouseDataService dataService,
+                               EntityExportService entityExportService, ConcurrentQueryExecutor queryExecutor) {
         this.importService = importService;
         this.dataService = dataService;
         this.entityExportService = entityExportService;
+        this.queryExecutor = queryExecutor;
     }
 
     public ImportSummary importFile(MultipartFile file) throws IOException {
@@ -71,11 +75,21 @@ public class ImportExportService {
     }
 
     private byte[] exportWorkbook(boolean template) throws IOException {
+        List<Dataset> exportDatasets = datasets();
+        List<CompletableFuture<List<Map<String, Object>>>> rowQueries = new ArrayList<>();
+        if (!template) {
+            for (Dataset dataset : exportDatasets) {
+                rowQueries.add(queryExecutor.submit(() -> queryRows(dataset)));
+            }
+            queryExecutor.awaitAll(rowQueries.toArray(new CompletableFuture<?>[0]));
+        }
+
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             if (template) writeInstructions(workbook);
-            for (Dataset dataset : datasets()) {
-                List<Map<String, Object>> rows = template ? new ArrayList<>() : queryRows(dataset);
-                writeDataset(workbook, dataset, rows);
+            for (int index = 0; index < exportDatasets.size(); index++) {
+                List<Map<String, Object>> rows =
+                        template ? new ArrayList<>() : queryExecutor.await(rowQueries.get(index));
+                writeDataset(workbook, exportDatasets.get(index), rows);
             }
             workbook.setActiveSheet(0);
             workbook.write(output);

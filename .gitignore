@@ -6,3 +6,27 @@ frontend/dist/
 frontend/backend/
 backend/target/
 *.log
+# Visual Studio
+.vs/
+
+# VS Code 本地配置（如果团队不共享）
+.vscode/
+
+# JetBrains
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Python virtual environment
+.venv/
+venv/
+
+# Environment variables / secrets
+.env
+
+# Logs
+*.log
