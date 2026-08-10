@@ -124,3 +124,5 @@ erDiagram
 | `WAREHOUSE_DB_USERNAME` | `warehouse` | MySQL 用户名 |
 | `WAREHOUSE_DB_PASSWORD` | `warehouse123` | MySQL 密码 |
 | `WAREHOUSE_SEED_ENABLED` | `true` | 空库是否自动导入模拟数据 |
+| `WAREHOUSE_QUERY_CONCURRENCY` | `6` | Global query worker count; keep below the datasource pool limit |
+| `WAREHOUSE_QUERY_QUEUE_CAPACITY` | `100` | Waiting query task queue capacity |

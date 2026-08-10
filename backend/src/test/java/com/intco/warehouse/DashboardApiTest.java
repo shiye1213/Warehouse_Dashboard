@@ -3,7 +3,9 @@ package com.intco.warehouse;
 import static org.hamcrest.Matchers.greaterThan;
 import static org.hamcrest.Matchers.hasSize;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -14,9 +16,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.intco.warehouse.entity.WarehouseDailyMetricEntity;
 import com.intco.warehouse.mapper.WarehouseDailyMetricMapper;
+import com.intco.warehouse.service.ConcurrentQueryExecutor;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.junit.jupiter.api.Test;
@@ -37,6 +43,28 @@ class DashboardApiTest {
 
     @Autowired
     private WarehouseDailyMetricMapper warehouseDailyMetricMapper;
+
+    @Autowired
+    private ConcurrentQueryExecutor queryExecutor;
+
+    @Test
+    void independentQueriesUseDifferentWorkerThreads() throws Exception {
+        CountDownLatch started = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        CompletableFuture<String> first = queryExecutor.submit(() -> waitForRelease(started, release));
+        CompletableFuture<String> second = queryExecutor.submit(() -> waitForRelease(started, release));
+
+        boolean bothStarted;
+        try {
+            bothStarted = started.await(5, TimeUnit.SECONDS);
+        } finally {
+            release.countDown();
+        }
+
+        assertTrue(bothStarted, "independent queries should overlap");
+        queryExecutor.awaitAll(first, second);
+        assertNotEquals(queryExecutor.await(first), queryExecutor.await(second));
+    }
 
     @Test
     void overviewExposesExecutiveSummaryAndDetails() throws Exception {
@@ -154,5 +182,15 @@ class DashboardApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.importedRows").value(1))
                 .andExpect(jsonPath("$.endDate").value("2026-08-01"));
+    }
+    private static String waitForRelease(CountDownLatch started, CountDownLatch release) {
+        started.countDown();
+        try {
+            if (!release.await(5, TimeUnit.SECONDS)) throw new IllegalStateException("query release timed out");
+            return Thread.currentThread().getName();
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("query worker interrupted", error);
+        }
     }
 }

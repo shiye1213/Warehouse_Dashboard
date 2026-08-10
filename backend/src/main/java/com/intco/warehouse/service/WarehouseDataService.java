@@ -12,6 +12,7 @@ import com.intco.warehouse.model.DashboardData.Zone;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.concurrent.CompletableFuture;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -36,6 +37,7 @@ public class WarehouseDataService {
     private final InventoryAgeBatchMapper inventoryAgeBatchMapper;
     private final InventoryAgeSkuMapper inventoryAgeSkuMapper;
     private final DataImportJobMapper dataImportJobMapper;
+    private final ConcurrentQueryExecutor queryExecutor;
 
     public WarehouseDataService(
             WarehouseMapper warehouseMapper,
@@ -49,7 +51,8 @@ public class WarehouseDataService {
             InventoryAgeRuleMapper inventoryAgeRuleMapper,
             InventoryAgeBatchMapper inventoryAgeBatchMapper,
             InventoryAgeSkuMapper inventoryAgeSkuMapper,
-            DataImportJobMapper dataImportJobMapper) {
+            DataImportJobMapper dataImportJobMapper,
+            ConcurrentQueryExecutor queryExecutor) {
         this.warehouseMapper = warehouseMapper;
         this.inventorySnapshotMapper = inventorySnapshotMapper;
         this.skuDailyMetricMapper = skuDailyMetricMapper;
@@ -62,16 +65,25 @@ public class WarehouseDataService {
         this.inventoryAgeBatchMapper = inventoryAgeBatchMapper;
         this.inventoryAgeSkuMapper = inventoryAgeSkuMapper;
         this.dataImportJobMapper = dataImportJobMapper;
+        this.queryExecutor = queryExecutor;
     }
 
     public DashboardData currentData() {
+        CompletableFuture<List<WarehouseDailyMetric>> dailyQuery = queryExecutor.submit(() -> loadWarehouseDaily(null));
+        CompletableFuture<List<Zone>> zoneQuery = queryExecutor.submit(() -> loadLatestZones(null));
+        CompletableFuture<List<Alert>> alertQuery = queryExecutor.submit(() -> loadAlerts(null));
+        CompletableFuture<List<Target>> targetQuery = queryExecutor.submit(this::loadTargets);
+        CompletableFuture<Long> warehouseCountQuery = queryExecutor.submit(() -> warehouseMapper.selectCount(null));
+        queryExecutor.awaitAll(dailyQuery, zoneQuery, alertQuery, targetQuery, warehouseCountQuery);
+
         DashboardData data = new DashboardData();
-        data.setWarehouseDaily(loadWarehouseDaily(null));
+        data.setWarehouseDaily(queryExecutor.await(dailyQuery));
         data.setDaily(aggregateDaily(data.getWarehouseDaily()));
-        data.setZones(loadLatestZones(null));
-        data.setAlerts(loadAlerts(null));
-        data.setTargets(loadTargets());
-        data.setMeta(loadMeta(null));
+        data.setZones(queryExecutor.await(zoneQuery));
+        data.setAlerts(queryExecutor.await(alertQuery));
+        data.setTargets(queryExecutor.await(targetQuery));
+        data.setMeta(buildMeta(data.getWarehouseDaily(), data.getZones(), data.getAlerts(),
+                queryExecutor.await(warehouseCountQuery)));
         return data;
     }
 
@@ -112,14 +124,29 @@ public class WarehouseDataService {
                 "areaCount", warehouseRow.getAreaCount(), "capacityLocations", warehouseRow.getCapacityLocations(),
                 "owners", splitOwners(warehouseRow.getWarehouseOwner()));
 
-        List<WarehouseDailyMetric> allDaily = loadWarehouseDaily(warehouseId);
+        CompletableFuture<List<WarehouseDailyMetric>> dailyQuery =
+                queryExecutor.submit(() -> loadWarehouseDaily(warehouseId));
+        CompletableFuture<List<Zone>> zoneQuery = queryExecutor.submit(() -> loadLatestZones(warehouseId));
+        CompletableFuture<List<InventorySnapshotEntity>> inventoryQuery =
+                queryExecutor.submit(() -> loadInventoryRows(warehouseId));
+        CompletableFuture<List<Target>> targetQuery = queryExecutor.submit(this::loadTargets);
+        CompletableFuture<List<Map<String, Object>>> alertQuery =
+                queryExecutor.submit(() -> loadDetailedAlerts(warehouseId));
+        CompletableFuture<List<Map<String, Object>>> skuQuery =
+                queryExecutor.submit(() -> loadLatestSkuOperations(warehouseId));
+        queryExecutor.awaitAll(dailyQuery, zoneQuery, inventoryQuery, targetQuery, alertQuery, skuQuery);
+
+        List<WarehouseDailyMetric> allDaily = queryExecutor.await(dailyQuery);
+        List<Zone> zones = queryExecutor.await(zoneQuery);
+        List<InventorySnapshotEntity> inventoryRows = queryExecutor.await(inventoryQuery);
+        List<Map<String, Object>> inventory = mapInventory(inventoryRows, false);
+        List<Map<String, Object>> stocks = mapInventory(inventoryRows, true);
+        List<Target> targets = queryExecutor.await(targetQuery);
+        List<Map<String, Object>> alertMaps = queryExecutor.await(alertQuery);
+        List<Map<String, Object>> skuOperations = queryExecutor.await(skuQuery);
         int range = Math.max(1, Math.min(requestedRange, 366));
-        List<WarehouseDailyMetric> daily = new ArrayList<>(allDaily.subList(Math.max(0, allDaily.size() - range), allDaily.size()));
-        List<Zone> zones = loadLatestZones(warehouseId);
-        List<Alert> alerts = loadAlerts(warehouseId);
-        List<Map<String, Object>> inventory = loadInventory(warehouseId, false);
-        List<Map<String, Object>> stocks = loadInventory(warehouseId, true);
-        List<Target> targets = loadTargets();
+        List<WarehouseDailyMetric> daily =
+                new ArrayList<>(allDaily.subList(Math.max(0, allDaily.size() - range), allDaily.size()));
 
         LocalDate start = allDaily.isEmpty() ? null : LocalDate.parse(allDaily.get(0).getDate());
         LocalDate end = allDaily.isEmpty() ? null : LocalDate.parse(allDaily.get(allDaily.size() - 1).getDate());
@@ -129,7 +156,7 @@ public class WarehouseDataService {
         warehouse.put("source", "MySQL · warehouse_dashboard");
 
         List<Map<String, Object>> dailyMaps = daily.stream().map(this::dailyMap).collect(Collectors.toList());
-        List<Map<String, Object>> alertMaps = loadDetailedAlerts(warehouseId);
+
         List<Map<String, Object>> openAlerts = alertMaps.stream()
                 .filter(row -> !"已关闭".equals(row.get("status"))).collect(Collectors.toList());
 
@@ -143,39 +170,64 @@ public class WarehouseDataService {
         result.put("openExceptions", openAlerts);
         result.put("inventory", inventory);
         result.put("stocks", stocks);
-        result.put("skuOperations", loadLatestSkuOperations(warehouseId));
+        result.put("skuOperations", skuOperations);
         result.put("targets", targets.stream().map(this::targetMap).collect(Collectors.toList()));
         result.put("exceptionBreakdown", exceptionBreakdown(alertMaps));
         return Optional.of(result);
     }
 
     public Optional<Map<String, Object>> zoneDetail(String code) {
-        List<Zone> matches = warehouseAreaSnapshotMapper.selectList(Wrappers.lambdaQuery(WarehouseAreaSnapshotEntity.class)
-                        .eq(WarehouseAreaSnapshotEntity::getAreaId, code).orderByDesc(WarehouseAreaSnapshotEntity::getSnapshotDate).last("LIMIT 1"))
-                .stream().map(this::mapZone).collect(Collectors.toList());
+        CompletableFuture<List<Zone>> zoneQuery = queryExecutor.submit(() ->
+                warehouseAreaSnapshotMapper.selectList(Wrappers.lambdaQuery(WarehouseAreaSnapshotEntity.class)
+                                .eq(WarehouseAreaSnapshotEntity::getAreaId, code)
+                                .orderByDesc(WarehouseAreaSnapshotEntity::getSnapshotDate).last("LIMIT 1"))
+                        .stream().map(this::mapZone).collect(Collectors.toList()));
+        CompletableFuture<List<Alert>> alertQuery = queryExecutor.submit(() -> loadAlertsByArea(code));
+        queryExecutor.awaitAll(zoneQuery, alertQuery);
+
+        List<Zone> matches = queryExecutor.await(zoneQuery);
         if (matches.isEmpty()) return Optional.empty();
-        Zone zone = matches.get(0);
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("zone", zone);
-        result.put("relatedAlerts", loadAlertsByArea(code));
+        result.put("zone", matches.get(0));
+        result.put("relatedAlerts", queryExecutor.await(alertQuery));
         return Optional.of(result);
     }
 
     public Map<String, Object> dataStatus() {
+        CompletableFuture<Long> warehouses = queryExecutor.submit(() -> warehouseMapper.selectCount(null));
+        CompletableFuture<Long> inventorySnapshots = queryExecutor.submit(() -> inventorySnapshotMapper.selectCount(null));
+        CompletableFuture<Long> skuDailyMetrics = queryExecutor.submit(() -> skuDailyMetricMapper.selectCount(null));
+        CompletableFuture<Long> warehouseDailyMetrics = queryExecutor.submit(() -> warehouseDailyMetricMapper.selectCount(null));
+        CompletableFuture<Long> areaSnapshots = queryExecutor.submit(() -> warehouseAreaSnapshotMapper.selectCount(null));
+        CompletableFuture<Long> exceptionEvents = queryExecutor.submit(() -> exceptionEventMapper.selectCount(null));
+        CompletableFuture<Long> bomRelations = queryExecutor.submit(() -> bomRelationMapper.selectCount(null));
+        CompletableFuture<Long> kpiTargets = queryExecutor.submit(() -> kpiTargetMapper.selectCount(null));
+        CompletableFuture<Long> inventoryAgeRules = queryExecutor.submit(() -> inventoryAgeRuleMapper.selectCount(null));
+        CompletableFuture<Long> inventoryAgeBatches = queryExecutor.submit(() -> inventoryAgeBatchMapper.selectCount(null));
+        CompletableFuture<Long> inventoryAgeSkus = queryExecutor.submit(() -> inventoryAgeSkuMapper.selectCount(null));
+        CompletableFuture<Long> importJobs = queryExecutor.submit(() -> dataImportJobMapper.selectCount(null));
+        CompletableFuture<List<WarehouseDailyMetric>> dailyQuery = queryExecutor.submit(() -> loadWarehouseDaily(null));
+        CompletableFuture<List<Zone>> zoneQuery = queryExecutor.submit(() -> loadLatestZones(null));
+        CompletableFuture<List<Alert>> alertQuery = queryExecutor.submit(() -> loadAlerts(null));
+        queryExecutor.awaitAll(warehouses, inventorySnapshots, skuDailyMetrics, warehouseDailyMetrics,
+                areaSnapshots, exceptionEvents, bomRelations, kpiTargets, inventoryAgeRules,
+                inventoryAgeBatches, inventoryAgeSkus, importJobs, dailyQuery, zoneQuery, alertQuery);
+
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("warehouses", warehouseMapper.selectCount(null));
-        result.put("inventorySnapshots", inventorySnapshotMapper.selectCount(null));
-        result.put("skuDailyMetrics", skuDailyMetricMapper.selectCount(null));
-        result.put("warehouseDailyMetrics", warehouseDailyMetricMapper.selectCount(null));
-        result.put("areaSnapshots", warehouseAreaSnapshotMapper.selectCount(null));
-        result.put("exceptionEvents", exceptionEventMapper.selectCount(null));
-        result.put("bomRelations", bomRelationMapper.selectCount(null));
-        result.put("kpiTargets", kpiTargetMapper.selectCount(null));
-        result.put("inventoryAgeRules", inventoryAgeRuleMapper.selectCount(null));
-        result.put("inventoryAgeBatches", inventoryAgeBatchMapper.selectCount(null));
-        result.put("inventoryAgeSkus", inventoryAgeSkuMapper.selectCount(null));
-        result.put("importJobs", dataImportJobMapper.selectCount(null));
-        result.putAll(loadMeta(null));
+        result.put("warehouses", queryExecutor.await(warehouses));
+        result.put("inventorySnapshots", queryExecutor.await(inventorySnapshots));
+        result.put("skuDailyMetrics", queryExecutor.await(skuDailyMetrics));
+        result.put("warehouseDailyMetrics", queryExecutor.await(warehouseDailyMetrics));
+        result.put("areaSnapshots", queryExecutor.await(areaSnapshots));
+        result.put("exceptionEvents", queryExecutor.await(exceptionEvents));
+        result.put("bomRelations", queryExecutor.await(bomRelations));
+        result.put("kpiTargets", queryExecutor.await(kpiTargets));
+        result.put("inventoryAgeRules", queryExecutor.await(inventoryAgeRules));
+        result.put("inventoryAgeBatches", queryExecutor.await(inventoryAgeBatches));
+        result.put("inventoryAgeSkus", queryExecutor.await(inventoryAgeSkus));
+        result.put("importJobs", queryExecutor.await(importJobs));
+        result.putAll(buildMeta(queryExecutor.await(dailyQuery), queryExecutor.await(zoneQuery),
+                queryExecutor.await(alertQuery), queryExecutor.await(warehouses)));
         return result;
     }
 
@@ -356,25 +408,30 @@ public class WarehouseDataService {
                 .collect(Collectors.toList());
     }
 
-    private Map<String, Object> loadMeta(String warehouseId) {
-        List<WarehouseDailyMetricEntity> rows = warehouseDailyMetricMapper.selectList(Wrappers.lambdaQuery(WarehouseDailyMetricEntity.class).eq(warehouseId != null, WarehouseDailyMetricEntity::getWarehouseId, warehouseId));
-        LocalDate start = rows.stream().map(WarehouseDailyMetricEntity::getBizDate).min(LocalDate::compareTo).orElse(null);
-        LocalDate end = rows.stream().map(WarehouseDailyMetricEntity::getBizDate).max(LocalDate::compareTo).orElse(null);
+    private Map<String, Object> buildMeta(List<WarehouseDailyMetric> rows, List<Zone> zones,
+                                          List<Alert> alerts, long warehouseCount) {
+        LocalDate start = rows.stream().map(WarehouseDailyMetric::getDate).map(LocalDate::parse)
+                .min(LocalDate::compareTo).orElse(null);
+        LocalDate end = rows.stream().map(WarehouseDailyMetric::getDate).map(LocalDate::parse)
+                .max(LocalDate::compareTo).orElse(null);
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("period", start == null ? "" : start + " 至 " + end);
         meta.put("latestDate", end == null ? null : end.toString());
-        meta.put("dayCount", rows.stream().map(WarehouseDailyMetricEntity::getBizDate).distinct().count());
+        meta.put("dayCount", rows.stream().map(WarehouseDailyMetric::getDate).distinct().count());
         meta.put("source", "MySQL · warehouse_dashboard");
-        meta.put("warehouseCount", warehouseMapper.selectCount(null));
-        meta.put("availableZoneRows", loadLatestZones(warehouseId).size());
-        meta.put("availableExceptionRows", loadAlerts(warehouseId).size());
+        meta.put("warehouseCount", warehouseCount);
+        meta.put("availableZoneRows", zones.size());
+        meta.put("availableExceptionRows", alerts.size());
         return meta;
     }
 
-    private List<Map<String, Object>> loadInventory(String warehouseId, boolean grouped) {
-        List<InventorySnapshotEntity> rows = inventorySnapshotMapper.selectList(Wrappers.lambdaQuery(InventorySnapshotEntity.class)
+    private List<InventorySnapshotEntity> loadInventoryRows(String warehouseId) {
+        return inventorySnapshotMapper.selectList(Wrappers.lambdaQuery(InventorySnapshotEntity.class)
                 .eq(InventorySnapshotEntity::getWarehouseId, warehouseId)
                 .orderByAsc(InventorySnapshotEntity::getProjectNo, InventorySnapshotEntity::getMaterialCode));
+    }
+
+    private List<Map<String, Object>> mapInventory(List<InventorySnapshotEntity> rows, boolean grouped) {
         if (!grouped) {
             return rows.stream().map(source -> mapOf(
                     "materialCode", source.getMaterialCode(), "materialName", source.getMaterialName(), "projectNo", source.getProjectNo(),
