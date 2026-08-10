@@ -14,17 +14,23 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.intco.warehouse.entity.InventorySnapshotEntity;
 import com.intco.warehouse.entity.WarehouseDailyMetricEntity;
+import com.intco.warehouse.mapper.InventorySnapshotMapper;
 import com.intco.warehouse.mapper.WarehouseDailyMetricMapper;
 import com.intco.warehouse.service.ConcurrentQueryExecutor;
+import com.jayway.jsonpath.JsonPath;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.springframework.beans.BeanUtils;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -46,6 +52,9 @@ class DashboardApiTest {
 
     @Autowired
     private ConcurrentQueryExecutor queryExecutor;
+
+    @Autowired
+    private InventorySnapshotMapper inventorySnapshotMapper;
 
     @Test
     void independentQueriesUseDifferentWorkerThreads() throws Exception {
@@ -110,6 +119,76 @@ class DashboardApiTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.summary.todayRawInbound").value(databaseValue.doubleValue()))
                 .andExpect(jsonPath("$.trend[30].rawInbound").value(databaseValue.doubleValue()));
+    }
+
+    @Test
+    @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+    void rawMaterialDashboardUsesOnlyLatestInventorySnapshot() throws Exception {
+        String before = mvc.perform(get("/api/dashboard/warehouses/WH-RM01"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        Number expectedOnHand = JsonPath.read(before, "$.summary.stockOnHandTon");
+        Number expectedAvailable = JsonPath.read(before, "$.summary.stockAvailableTon");
+
+        InventorySnapshotEntity latest = inventorySnapshotMapper.selectList(
+                Wrappers.lambdaQuery(InventorySnapshotEntity.class)
+                        .eq(InventorySnapshotEntity::getWarehouseId, "WH-RM01")
+                        .orderByDesc(InventorySnapshotEntity::getStockDate)
+                        .last("LIMIT 1")).get(0);
+        InventorySnapshotEntity historical = new InventorySnapshotEntity();
+        BeanUtils.copyProperties(latest, historical);
+        historical.setStockDate(latest.getStockDate().minusDays(1));
+        historical.setOnHandMainQty(new BigDecimal("999999"));
+        historical.setReservedMainQty(BigDecimal.ZERO);
+        historical.setFrozenMainQty(BigDecimal.ZERO);
+        assertEquals(1, inventorySnapshotMapper.insert(historical));
+
+        mvc.perform(get("/api/dashboard/warehouses/WH-RM01"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.inventorySnapshotDate").value(latest.getStockDate().toString()))
+                .andExpect(jsonPath("$.summary.stockOnHandTon").value(expectedOnHand.doubleValue()))
+                .andExpect(jsonPath("$.summary.stockAvailableTon").value(expectedAvailable.doubleValue()));
+    }
+
+    @Test
+    @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+    void rawMaterialDashboardKeepsPreviousMonthsOutOfCurrentPeriodMetrics() throws Exception {
+        String before = mvc.perform(get("/api/dashboard/warehouses/WH-RM01"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        Number expectedInbound = JsonPath.read(before, "$.summary.monthRawInbound");
+        Number expectedAccuracy = JsonPath.read(before, "$.summary.inventoryAccuracy");
+
+        WarehouseDailyMetricEntity latest = warehouseDailyMetricMapper.selectList(
+                Wrappers.lambdaQuery(WarehouseDailyMetricEntity.class)
+                        .eq(WarehouseDailyMetricEntity::getWarehouseId, "WH-RM01")
+                        .orderByDesc(WarehouseDailyMetricEntity::getBizDate)
+                        .last("LIMIT 1")).get(0);
+        WarehouseDailyMetricEntity previousMonth = new WarehouseDailyMetricEntity();
+        BeanUtils.copyProperties(latest, previousMonth);
+        previousMonth.setBizDate(latest.getBizDate().withDayOfMonth(1).minusDays(1));
+        previousMonth.setRawInboundTon(new BigDecimal("999999"));
+        previousMonth.setInventoryAccuracy(BigDecimal.ZERO);
+        assertEquals(1, warehouseDailyMetricMapper.insert(previousMonth));
+
+        mvc.perform(get("/api/dashboard/warehouses/WH-RM01"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.metricPeriodStart").value(latest.getBizDate().withDayOfMonth(1).toString()))
+                .andExpect(jsonPath("$.meta.metricPeriodEnd").value(latest.getBizDate().toString()))
+                .andExpect(jsonPath("$.summary.periodDayCount").value(latest.getBizDate().getDayOfMonth()))
+                .andExpect(jsonPath("$.summary.monthRawInbound").value(expectedInbound.doubleValue()))
+                .andExpect(jsonPath("$.summary.inventoryAccuracy").value(expectedAccuracy.doubleValue()));
+    }
+
+    @Test
+    void rawMaterialDashboardUsesCurrentStateForInventoryAndOpenExceptionMetrics() throws Exception {
+        String response = mvc.perform(get("/api/dashboard/warehouses/WH-RM01"))
+                .andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+        String inventoryDate = JsonPath.read(response, "$.meta.inventorySnapshotDate");
+        List<String> stockDates = JsonPath.read(response, "$.stocks[*].stockDate");
+        List<Map<String, Object>> openExceptions = JsonPath.read(response, "$.openExceptions");
+        Number slaBreached = JsonPath.read(response, "$.summary.slaBreached");
+
+        assertEquals(stockDates.size(), stockDates.stream().filter(inventoryDate::equals).count());
+        assertEquals(openExceptions.stream().filter(row -> Boolean.TRUE.equals(row.get("slaBreached"))).count(), slaBreached.longValue());
     }
 
     @Test

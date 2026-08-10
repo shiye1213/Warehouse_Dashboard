@@ -147,11 +147,19 @@ public class WarehouseDataService {
         int range = Math.max(1, Math.min(requestedRange, 366));
         List<WarehouseDailyMetric> daily =
                 new ArrayList<>(allDaily.subList(Math.max(0, allDaily.size() - range), allDaily.size()));
+        LocalDate latestMetricDate = allDaily.isEmpty() ? null : LocalDate.parse(allDaily.get(allDaily.size() - 1).getDate());
+        LocalDate metricPeriodStart = latestMetricDate == null ? null : latestMetricDate.withDayOfMonth(1);
+        List<WarehouseDailyMetric> periodDaily = allDaily.stream()
+                .filter(row -> metricPeriodStart == null || !LocalDate.parse(row.getDate()).isBefore(metricPeriodStart))
+                .collect(Collectors.toList());
 
-        LocalDate start = allDaily.isEmpty() ? null : LocalDate.parse(allDaily.get(0).getDate());
-        LocalDate end = allDaily.isEmpty() ? null : LocalDate.parse(allDaily.get(allDaily.size() - 1).getDate());
-        warehouse.put("period", start == null ? "" : start + " 至 " + end);
-        warehouse.put("latestDate", end == null ? null : end.toString());
+        LocalDate periodEnd = periodDaily.isEmpty() ? null : LocalDate.parse(periodDaily.get(periodDaily.size() - 1).getDate());
+        LocalDate inventorySnapshotDate = inventoryRows.isEmpty() ? null : inventoryRows.get(0).getStockDate();
+        warehouse.put("period", metricPeriodStart == null ? "" : metricPeriodStart + " 至 " + periodEnd);
+        warehouse.put("latestDate", latestMetricDate == null ? null : latestMetricDate.toString());
+        warehouse.put("metricPeriodStart", metricPeriodStart == null ? null : metricPeriodStart.toString());
+        warehouse.put("metricPeriodEnd", periodEnd == null ? null : periodEnd.toString());
+        warehouse.put("inventorySnapshotDate", inventorySnapshotDate == null ? null : inventorySnapshotDate.toString());
         warehouse.put("snapshotDate", zones.isEmpty() ? null : zones.get(0).getSnapshotDate());
         warehouse.put("source", "MySQL · warehouse_dashboard");
 
@@ -162,7 +170,7 @@ public class WarehouseDataService {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("meta", warehouse);
-        result.put("summary", buildWarehouseSummary(allDaily, zones, alertMaps, stocks));
+        result.put("summary", buildWarehouseSummary(periodDaily, zones, alertMaps, stocks));
         result.put("daily", dailyMaps);
         result.put("trend", dailyMaps);
         result.put("zones", zones.stream().map(this::zoneMap).collect(Collectors.toList()));
@@ -426,9 +434,13 @@ public class WarehouseDataService {
     }
 
     private List<InventorySnapshotEntity> loadInventoryRows(String warehouseId) {
-        return inventorySnapshotMapper.selectList(Wrappers.lambdaQuery(InventorySnapshotEntity.class)
+        List<InventorySnapshotEntity> rows = inventorySnapshotMapper.selectList(Wrappers.lambdaQuery(InventorySnapshotEntity.class)
                 .eq(InventorySnapshotEntity::getWarehouseId, warehouseId)
+                .orderByDesc(InventorySnapshotEntity::getStockDate)
                 .orderByAsc(InventorySnapshotEntity::getProjectNo, InventorySnapshotEntity::getMaterialCode));
+        if (rows.isEmpty()) return rows;
+        LocalDate latestDate = rows.get(0).getStockDate();
+        return rows.stream().filter(row -> latestDate.equals(row.getStockDate())).collect(Collectors.toList());
     }
 
     private List<Map<String, Object>> mapInventory(List<InventorySnapshotEntity> rows, boolean grouped) {
@@ -506,19 +518,27 @@ public class WarehouseDataService {
 
     private Map<String, Object> buildWarehouseSummary(List<WarehouseDailyMetric> rows, List<Zone> zones, List<Map<String, Object>> alerts, List<Map<String, Object>> stocks) {
         WarehouseDailyMetric latest = rows.isEmpty() ? new WarehouseDailyMetric() : rows.get(rows.size() - 1);
+        LocalDate periodStart = rows.isEmpty() ? null : LocalDate.parse(rows.get(0).getDate());
+        LocalDate periodEnd = rows.isEmpty() ? null : LocalDate.parse(rows.get(rows.size() - 1).getDate());
+        List<Map<String, Object>> periodAlerts = alerts.stream().filter(row -> {
+            if (periodStart == null || periodEnd == null || row.get("occurredAt") == null) return false;
+            LocalDate eventDate = LocalDate.parse(String.valueOf(row.get("occurredAt")).substring(0, 10));
+            return !eventDate.isBefore(periodStart) && !eventDate.isAfter(periodEnd);
+        }).collect(Collectors.toList());
         int capacity = zones.stream().mapToInt(Zone::getCapacity).sum();
         int occupied = zones.stream().mapToInt(Zone::getOccupied).sum();
         int available = zones.stream().mapToInt(Zone::getAvailable).sum();
         int abnormal = zones.stream().mapToInt(Zone::getAbnormal).sum();
         long open = alerts.stream().filter(row -> !"已关闭".equals(row.get("status"))).count();
         long critical = alerts.stream().filter(row -> !"已关闭".equals(row.get("status")) && "紧急".equals(row.get("severity"))).count();
-        long closed = alerts.size() - open;
+        long periodClosed = periodAlerts.stream().filter(row -> "已关闭".equals(row.get("status"))).count();
         double onHand = stocks.stream().mapToDouble(row -> number(row.get("onHand"))).sum();
         double reserved = stocks.stream().mapToDouble(row -> number(row.get("reserved"))).sum();
         double frozen = stocks.stream().mapToDouble(row -> number(row.get("frozen"))).sum();
         double occupancy = capacity == 0 ? 0 : (double) occupied / capacity;
 
         Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("periodDayCount", rows.size());
         summary.put("todayRawInbound", latest.getRawInboundTon());
         summary.put("todayRawOutbound", latest.getRawOutboundTon());
         summary.put("todayInbound", dailyMap(latest).get("inbound"));
@@ -546,11 +566,11 @@ public class WarehouseDataService {
         summary.put("stockAvailableTon", onHand - reserved - frozen);
         summary.put("stockReservedTon", reserved);
         summary.put("stockFrozenTon", frozen);
-        summary.put("exceptionTotal", alerts.size());
+        summary.put("exceptionTotal", periodAlerts.size());
         summary.put("openExceptions", open);
         summary.put("criticalOpenExceptions", critical);
-        summary.put("slaBreached", alerts.stream().filter(row -> Boolean.TRUE.equals(row.get("slaBreached"))).count());
-        summary.put("exceptionCloseRate", alerts.isEmpty() ? 1d : (double) closed / alerts.size());
+        summary.put("slaBreached", alerts.stream().filter(row -> !"已关闭".equals(row.get("status")) && Boolean.TRUE.equals(row.get("slaBreached"))).count());
+        summary.put("exceptionCloseRate", periodAlerts.isEmpty() ? 1d : (double) periodClosed / periodAlerts.size());
         summary.putAll(health(latest, occupancy, open));
         return summary;
     }

@@ -26,6 +26,7 @@ import TrendChart from '../components/RawMaterialTrendChart.vue'
 import { formatNumber, formatPercent } from '../composables/useDashboard'
 import { useProjectRefresh } from '../composables/useProjectRefresh'
 import { useRawMaterialDashboard } from '../composables/useRawMaterialDashboard'
+import { calculateAvailableRate } from '../utils/rawMaterialMetrics'
 
 const { snapshot, loading, error, refresh } = useRawMaterialDashboard()
 const { refreshing, refreshVersion, lastUpdatedAt, refreshProject } = useProjectRefresh()
@@ -45,8 +46,9 @@ const zones = computed(() => snapshot.value?.zones || [])
 const stocks = computed(() => snapshot.value?.stocks || [])
 const targets = computed(() => snapshot.value?.targets || [])
 const historyDayCount = computed(() => Math.max(trend.value.length, 1))
+const periodDayCount = computed(() => Math.max(Number(summary.value.periodDayCount || 0), 1))
 const dataMonthLabel = computed(() => {
-  const latestDate = String(snapshot.value?.meta?.latestDate || '')
+  const latestDate = String(snapshot.value?.meta?.metricPeriodEnd || snapshot.value?.meta?.latestDate || '')
   const month = Number(latestDate.slice(5, 7))
   return month ? month + ' 月' : '本期'
 })
@@ -74,8 +76,8 @@ const netInventoryChange = computed(() => Number(summary.value.monthRawInbound |
 const todayFlowBalance = computed(() => Number(summary.value.todayRawInbound || 0) - Number(summary.value.todayRawOutbound || 0))
 const monthOrderTotal = computed(() => Number(summary.value.monthInboundOrders || 0) + Number(summary.value.monthOutboundOrders || 0))
 const monthHandlingTotal = computed(() => Number(summary.value.monthPickingTasks || 0) + Number(summary.value.monthForkliftTasks || 0))
-const monthDailyOrders = computed(() => Math.round(monthOrderTotal.value / historyDayCount.value))
-const monthDailyHandling = computed(() => Math.round(monthHandlingTotal.value / historyDayCount.value))
+const monthDailyOrders = computed(() => Math.round(monthOrderTotal.value / periodDayCount.value))
+const monthDailyHandling = computed(() => Math.round(monthHandlingTotal.value / periodDayCount.value))
 const latestFlowComparison = computed(() => {
   const current = trend.value.at(-1) || {}
   const previous = trend.value.at(-2) || {}
@@ -93,17 +95,18 @@ function materialVisual(stock) {
   if (text.includes('乳胶') || text.includes('液')) return { materialForm: 'liquid', materialFormLabel: '液体' }
   return { materialForm: 'granule', materialFormLabel: '颗粒' }
 }
-const totalMaterialInventory = computed(() => stocks.value.reduce((total, stock) => total + Number(stock.onHand || 0), 0))
 const materialTanks = computed(() => stocks.value.map((stock, index) => {
   const onHand = Number(stock.onHand || 0)
   const available = Number(stock.available || 0)
   const frozen = Number(stock.frozen || 0)
+  const availableRate = calculateAvailableRate(onHand, available)
   return {
     ...stock,
     ...materialVisual(stock),
     id: stock.code || 'RM-' + String(index + 1).padStart(2, '0'),
-    fillRate: totalMaterialInventory.value ? onHand / totalMaterialInventory.value : 0,
-    state: frozen > 0 ? '有冻结' : onHand && available / onHand < 0.9 ? '预留偏高' : '正常',
+    availableRate,
+    fillRate: availableRate,
+    state: onHand <= 0 ? '无库存' : frozen > 0 ? '有冻结' : availableRate < 0.9 ? '预留偏高' : '正常',
   }
 }))
 const flowSeries = computed(() => {
@@ -353,7 +356,7 @@ onBeforeUnmount(() => {
             <div class="raw-today-pair">
               <div><span>{{ dataMonthLabel }}累计入库</span><strong><AnimatedNumber :value="summary.monthRawInbound" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
               <div><span>{{ dataMonthLabel }}累计领用</span><strong><AnimatedNumber :value="summary.monthRawOutbound" :formatter="formatTon" :animation-key="refreshVersion" /></strong><small>吨</small></div>
-              <div><span>净变化</span><strong><AnimatedNumber :value="netInventoryChange" :formatter="formatSignedTon" :animation-key="refreshVersion" /></strong><small>吨</small><em>较昨日</em></div>
+              <div><span>净变化</span><strong><AnimatedNumber :value="netInventoryChange" :formatter="formatSignedTon" :animation-key="refreshVersion" /></strong><small>吨</small><em>累计入库 - 累计领用</em></div>
             </div>
             <TrendChart :key="refreshVersion" class="raw-trend-chart" :rows="trend" :series="flowSeries" :height="220" :show-axis-unit="false" category-boundary-gap nice-y-axis :y-axis-split-number="6" :y-axis-max="1.2" :y-axis-interval="0.2" :axis-bottom="15" :x-axis-label-margin="10" unit="吨" />
             <div class="raw-flow-foot"><span>月度净补库</span><strong><AnimatedNumber :value="netInventoryChange" :formatter="formatSignedTon" :animation-key="refreshVersion" /> 吨</strong><em>今日净变化 <AnimatedNumber :value="todayFlowBalance" :formatter="formatSignedTon" :animation-key="refreshVersion" /> 吨</em></div>
@@ -361,7 +364,7 @@ onBeforeUnmount(() => {
 
           <article class="raw-panel raw-posture-panel" role="link" tabindex="0" aria-label="查看原料库存结构" @click="navigateTo('/zones')" @keydown.enter.self="navigateTo('/zones')" @keydown.space.self.prevent="navigateTo('/zones')">
             <span class="raw-panel-accent centered-accent" />
-            <header class="raw-panel-title split"><h2>原料实时库存结构 <CircleHelp /></h2><div class="raw-panel-head-actions"><p>库存快照 {{ snapshot?.meta?.latestDate }} · <b><AnimatedNumber :value="materialTanks.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 类物料</b></p></div></header>
+            <header class="raw-panel-title split"><h2>原料实时库存结构 <CircleHelp /></h2><div class="raw-panel-head-actions"><p>库存快照 {{ snapshot?.meta?.inventorySnapshotDate || '—' }} · <b><AnimatedNumber :value="materialTanks.length" :formatter="formatInteger" :animation-key="refreshVersion" /> 类物料</b></p></div></header>
             <div class="raw-silo-overview" :aria-label="materialTanks.length + ' 类原料实时库存概况'">
               <article
                 v-for="(tank, index) in materialTanks"
@@ -370,7 +373,7 @@ onBeforeUnmount(() => {
                 :class="[`is-${tank.materialForm}`, { 'is-high': tank.state !== '正常' }]"
                 data-source="inventory_snapshot"
                 :style="{ '--tank-delay': `${index * 120}ms` }"
-                :aria-label="tank.id + ' ' + tank.name + '，当前 ' + formatTon(tank.onHand) + ' 吨，可用 ' + formatTon(tank.available) + ' 吨，库存占比 ' + formatPercent(tank.fillRate, 0) + '，' + tank.state"
+                :aria-label="tank.id + ' ' + tank.name + '，当前 ' + formatTon(tank.onHand) + ' 吨，可用 ' + formatTon(tank.available) + ' 吨，可用占比 ' + formatPercent(tank.availableRate, 0) + '，' + tank.state"
               >
                 <header class="raw-silo-card-head">
                   <span><b>{{ tank.id }}</b><em>· {{ tank.name }}</em></span>
@@ -379,13 +382,13 @@ onBeforeUnmount(() => {
                 <div class="raw-silo-card-body">
                   <div class="raw-silo-model"><IndustrialTank :fill-rate="tank.fillRate" :material-form="tank.materialForm" :animation-key="refreshVersion" /><span class="raw-silo-form">{{ tank.materialFormLabel }}</span></div>
                   <div class="raw-silo-copy">
-                    <strong class="raw-silo-rate"><AnimatedNumber :value="tank.fillRate" :formatter="(value) => formatPercent(value, 0)" :animation-key="refreshVersion" /><em>库存占比</em></strong>
+                    <strong class="raw-silo-rate"><AnimatedNumber :value="tank.availableRate" :formatter="(value) => formatPercent(value, 0)" :animation-key="refreshVersion" /><em>可用占比</em></strong>
                     <strong class="raw-silo-quantity"><AnimatedNumber :value="tank.onHand" :formatter="formatTon" :animation-key="refreshVersion" /><em>吨</em></strong>
                     <p>可用 <AnimatedNumber :value="tank.available" :formatter="formatTon" :animation-key="refreshVersion" /> 吨</p>
                     <dl><div><dt>规格</dt><dd>{{ tank.specification || '—' }}</dd></div><div><dt>关联项目</dt><dd><AnimatedNumber :value="tank.projects" :formatter="formatInteger" :animation-key="refreshVersion" /> 个</dd></div></dl>
                   </div>
                 </div>
-                <div class="raw-silo-progress" aria-label="该物料占总库存比例"><i :style="{ width: formatPercent(tank.fillRate, 0) }" /></div>
+                <div class="raw-silo-progress" aria-label="该物料当前库存可用比例"><i :style="{ width: formatPercent(tank.availableRate, 0) }" /></div>
               </article>
             </div>
             <div class="raw-posture-metrics">
@@ -398,8 +401,8 @@ onBeforeUnmount(() => {
 
           <article class="raw-panel raw-month-panel" role="link" tabindex="0" aria-label="查看本月保障详情" @click="navigateTo('/performance')" @keydown.enter.self="navigateTo('/performance')" @keydown.space.self.prevent="navigateTo('/performance')">
             <span class="raw-panel-accent" />
-            <header class="raw-panel-title split"><h2>本期保障能力</h2><div class="raw-panel-head-actions"><p>{{ historyDayCount }} 天数据库口径</p></div></header>
-            <div class="raw-month-section-label"><span>今日运营概况</span><em>实时保障节奏</em></div>
+            <header class="raw-panel-title split"><h2>本期保障能力</h2><div class="raw-panel-head-actions"><p>{{ periodDayCount }} 天数据库口径</p></div></header>
+            <div class="raw-month-section-label"><span>{{ dataMonthLabel }}运营累计</span><em>截至最新业务日</em></div>
             <div class="raw-month-overview">
               <div class="is-orders">
                 <span class="raw-month-icon"><ClipboardList /></span>

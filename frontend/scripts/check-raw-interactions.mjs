@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+const dashboardUrl = process.env.RAW_DASHBOARD_URL || 'http://127.0.0.1:5173/raw-material'
 const profilePath = await mkdtemp(join(tmpdir(), 'raw-board-interactions-'))
 const chrome = spawn(chromePath, [
   '--headless=new',
@@ -188,7 +189,7 @@ try {
   await client.send('Page.addScriptToEvaluateOnNewDocument', {
     source: `(() => { const nativeSetInterval = window.setInterval.bind(window); window.setInterval = (handler, delay, ...args) => nativeSetInterval(handler, delay === 30000 ? 5000 : delay, ...args) })()`,
   }, sessionId)
-  await client.send('Page.navigate', { url: 'http://127.0.0.1:5173/raw-material' }, sessionId)
+  await client.send('Page.navigate', { url: dashboardUrl }, sessionId)
   await wait(2200)
 
   const initialResponse = await client.send('Runtime.evaluate', { expression: `(${initialProbe.toString()})()`, returnByValue: true }, sessionId)
@@ -286,7 +287,7 @@ try {
   await client.send('Emulation.setEmulatedMedia', {
     features: [{ name: 'prefers-reduced-motion', value: 'reduce' }],
   }, sessionId)
-  await client.send('Page.navigate', { url: 'http://127.0.0.1:5173/raw-material' }, sessionId)
+  await client.send('Page.navigate', { url: dashboardUrl }, sessionId)
   await wait(2200)
   await client.send('Runtime.evaluate', {
     expression: `(() => { [...document.querySelectorAll('.raw-board button')].find((button) => button.getAttribute('aria-label') === '刷新全部数据')?.click() })()`,

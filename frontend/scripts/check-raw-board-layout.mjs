@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const [width = 1366, height = 768] = process.argv.slice(2).map(Number)
+const dashboardUrl = process.env.RAW_DASHBOARD_URL || 'http://127.0.0.1:5173/raw-material'
 const chromePath = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
 const profilePath = await mkdtemp(join(tmpdir(), 'raw-board-layout-'))
 const chrome = spawn(chromePath, [
@@ -228,7 +229,7 @@ try {
   const { sessionId } = await client.send('Target.attachToTarget', { targetId, flatten: true })
   await client.send('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: false }, sessionId)
   await client.send('Page.enable', {}, sessionId)
-  await client.send('Page.navigate', { url: 'http://127.0.0.1:5173/raw-material' }, sessionId)
+  await client.send('Page.navigate', { url: dashboardUrl }, sessionId)
   await new Promise((resolve) => setTimeout(resolve, 1800))
   const response = await client.send('Runtime.evaluate', { expression: `(${probeLayout.toString()})()`, returnByValue: true }, sessionId)
   const result = response.result.value
