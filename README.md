@@ -92,6 +92,18 @@ mvn package
 
 完整导入会先校验全部工作表，再在单个数据库事务中替换数据。UTF-8 `.csv` 用于轻量更新 `运营_仓库每日指标`，以 `biz_date + warehouse_id` 为合并主键。建议从“数据中心”下载最新标准模板。
 
+## 定时数据演示
+
+后端默认每 5 分钟交替新增和删除一条编号为 `DEMO-AUTO-EXCEPTION` 的演示异常。任务只操作这一条固定记录，前端每 30 秒自动刷新，因此无需手动刷新页面。首次执行发生在后端启动 5 分钟后。
+
+可通过环境变量关闭任务或修改周期：
+
+```powershell
+$env:WAREHOUSE_DEMO_MUTATION_ENABLED = 'false'
+$env:WAREHOUSE_DEMO_MUTATION_INTERVAL_MS = '300000'
+$env:WAREHOUSE_DEMO_MUTATION_INITIAL_DELAY_MS = '300000'
+```
+
 ## API
 
 - `GET /api/dashboard/overview?range=31`：经营摘要、趋势和各类明细
