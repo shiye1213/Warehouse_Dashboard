@@ -2,7 +2,6 @@
 import { computed, onMounted, ref } from 'vue'
 import {
   AlertTriangle,
-  ArrowDownRight,
   ArrowRight,
   BadgeCheck,
   Boxes,
@@ -10,7 +9,6 @@ import {
   ChartNoAxesColumnIncreasing,
   CheckCircle2,
   CircleDollarSign,
-  ClipboardCheck,
   Clock3,
   Download,
   Menu,
@@ -35,18 +33,10 @@ const warehouseFilter = ref('全部仓库')
 const categoryFilter = ref('全部物料')
 const riskFilter = ref('全部风险')
 const selectedBucket = ref('')
-const activeSection = ref('overview')
 
 const bucketOrder = ['0-30天', '31-60天', '61-90天', '91-180天', '181-365天', '365天以上']
 const bucketColors = ['#3ca7ff', '#54d9d0', '#8bd45f', '#f3c44f', '#f28a32', '#f05252']
 const levelOrder = ['关注', '预警', '呆滞', '严重呆滞']
-const navItems = [
-  { key: 'overview', label: '健康总览', target: 'aging-overview' },
-  { key: 'risk', label: '风险清单', target: 'aging-risk' },
-  { key: 'owners', label: '责任跟进', target: 'aging-owners' },
-  { key: 'rules', label: '规则口径', target: 'aging-rules' },
-]
-
 async function load() {
   loading.value = true
   error.value = ''
@@ -220,13 +210,7 @@ function levelClass(value) { return value === '严重呆滞' ? 'severe' : value 
 
 function selectBucket(name) {
   selectedBucket.value = selectedBucket.value === name ? '' : name
-  activeSection.value = 'risk'
   document.getElementById('aging-risk')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-}
-
-function scrollToSection(item) {
-  activeSection.value = item.key
-  document.getElementById(item.target)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 
 function openNavigation() {
@@ -242,7 +226,6 @@ function resetFilters() {
 
 function focusRisk(level) {
   riskFilter.value = level
-  activeSection.value = 'risk'
   document.getElementById('aging-risk')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
 }
 
@@ -279,15 +262,6 @@ function exportRiskList() {
       </header>
 
       <div class="aging-toolbar" aria-label="看板导航与筛选">
-        <nav class="aging-tabs" aria-label="库存健康页面分区">
-          <button
-            v-for="item in navItems"
-            :key="item.key"
-            type="button"
-            :class="{ active: activeSection === item.key }"
-            @click="scrollToSection(item)"
-          ><span>{{ item.label }}</span></button>
-        </nav>
         <div class="aging-filters">
           <label><span>仓库</span><select v-model="warehouseFilter"><option v-for="item in warehouses" :key="item">{{ item }}</option></select></label>
           <label><span>物料类型</span><select v-model="categoryFilter"><option v-for="item in categories" :key="item">{{ item }}</option></select></label>
@@ -308,7 +282,7 @@ function exportRiskList() {
         <section class="aging-primary-grid">
           <div class="aging-column left-column">
             <article class="aging-panel distribution-panel">
-              <header class="panel-heading"><span class="panel-number">1</span><div><h3>库龄结构分析</h3><p>AGING DISTRIBUTION</p></div><button v-if="selectedBucket" @click="selectedBucket = ''">清除 {{ selectedBucket }}</button></header>
+              <header class="panel-heading"><span class="panel-number">库龄结构分析</span><button v-if="selectedBucket" @click="selectedBucket = ''">清除 {{ selectedBucket }}</button></header>
               <div class="distribution-body">
                 <button class="aging-donut" :style="donutStyle" aria-label="库存金额库龄分布" @click="selectedBucket = ''"><span><small>库存总金额</small><strong>¥{{ moneyWan(totalAmount) }}万</strong><em>{{ filteredBatches.length }} 批</em></span></button>
                 <div class="bucket-list">
@@ -322,7 +296,7 @@ function exportRiskList() {
             </article>
 
             <article id="aging-risk" class="aging-panel risk-list-panel">
-              <header class="panel-heading"><span class="panel-number">4</span><div><h3>高风险物料清单</h3><p>TOP RISK MATERIALS</p></div><button @click="exportRiskList"><Download :size="13" /> 导出</button></header>
+              <header class="panel-heading"><span class="panel-number">高风险物料清单</span><button @click="exportRiskList"><Download :size="13" /> 导出</button></header>
               <div class="risk-table-wrap">
                 <table>
                   <thead><tr><th>物料 / 项目</th><th>仓库</th><th>最大库龄</th><th>等级</th><th>责任人</th></tr></thead>
@@ -358,7 +332,7 @@ function exportRiskList() {
             </article>
 
             <article class="aging-panel warning-panel">
-              <header class="panel-heading"><span class="panel-number">5</span><div><h3>预警与异常总览</h3><p>WARNING OVERVIEW</p></div><button @click="scrollToSection(navItems[1])">查看清单 <ArrowRight :size="13" /></button></header>
+              <header class="panel-heading"><span class="panel-number">预警与异常总览</span><button @click="focusRisk('预警及以上')">查看清单 <ArrowRight :size="13" /></button></header>
               <div class="warning-grid">
                 <div v-for="item in warningCards" :key="item.label" :class="`warning-${item.tone}`"><component :is="item.icon" :size="21" /><span><small>{{ item.label }}</small><strong>{{ item.value }}</strong><em>{{ item.note }}</em></span></div>
               </div>
@@ -368,7 +342,7 @@ function exportRiskList() {
 
           <div class="aging-column right-column">
             <article class="aging-panel warehouse-panel">
-              <header class="panel-heading"><span class="panel-number">2</span><div><h3>仓库风险对比</h3><p>BY STAGNANT AMOUNT</p></div><span class="unit-note">金额单位：万元</span></header>
+              <header class="panel-heading"><span class="panel-number">仓库风险对比</span><span class="unit-note">金额单位：万元</span></header>
               <div class="warehouse-bars">
                 <div v-for="item in warehouseComparison" :key="item.name">
                   <header><strong>{{ item.name }}</strong><span>健康 {{ item.health }}分 · 严重 {{ item.severe }}项</span></header>
@@ -379,7 +353,7 @@ function exportRiskList() {
             </article>
 
             <article class="aging-panel heat-panel">
-              <header class="panel-heading"><span class="panel-number">3</span><div><h3>风险热力矩阵</h3><p>WAREHOUSE × RISK</p></div></header>
+              <header class="panel-heading"><span class="panel-number">风险热力矩阵</span></header>
               <div class="heat-matrix" :style="{ '--columns': heatCells.names.length }">
                 <div class="heat-corner">等级</div><strong v-for="name in heatCells.names" :key="name">{{ name }}</strong>
                 <template v-for="level in levelOrder" :key="level">
@@ -393,7 +367,7 @@ function exportRiskList() {
             </article>
 
             <article id="aging-owners" class="aging-panel owner-panel">
-              <header class="panel-heading"><span class="panel-number">6</span><div><h3>责任人任务跟进</h3><p>OWNER FOLLOW-UP</p></div><span class="source-note">处置台账</span></header>
+              <header class="panel-heading"><span class="panel-number">责任人任务跟进</span><span class="source-note">处置台账</span></header>
               <div class="owner-table">
                 <div class="owner-head"><span>责任人</span><span>待处置</span><span>P1 高</span><span>严重</span><span>涉及金额</span></div>
                 <div v-for="item in ownerRows" :key="item.owner" class="owner-row"><strong><UserRoundCheck :size="14" /> {{ item.owner }}</strong><span>{{ item.tasks }}</span><b>{{ item.p1 }}</b><em>{{ item.severe }}</em><small>{{ compactMoney(item.amount) }}</small></div>
@@ -404,29 +378,20 @@ function exportRiskList() {
 
         <section class="aging-secondary-grid">
           <article class="aging-panel readiness-panel">
-            <header class="panel-heading compact"><span class="panel-number">7</span><div><h3>处置准备度</h3><p>DISPOSAL READINESS</p></div></header>
+            <header class="panel-heading compact"><span class="panel-number">处置准备度</span></header>
             <div class="readiness-body"><div class="readiness-ring" :style="{ '--progress': `${readiness * 3.6}deg` }"><span><strong>{{ readiness }}%</strong><small>已建档</small></span></div><div class="readiness-list"><p><span>责任人覆盖</span><b>{{ percent(ownerCoverage, 0) }}</b></p><i><em :style="{ width: percent(ownerCoverage, 0) }" /></i><p><span>处置建议覆盖</span><b>{{ percent(actionCoverage, 0) }}</b></p><i><em :style="{ width: percent(actionCoverage, 0) }" /></i><small>完成率需接入“处置跟踪”状态后计算</small></div></div>
           </article>
 
           <article class="aging-panel action-score-panel">
-            <header class="panel-heading compact"><span class="panel-number">8</span><div><h3>处置优先级</h3><p>PRIORITY SCORE</p></div></header>
+            <header class="panel-heading compact"><span class="panel-number">处置优先级</span></header>
             <div class="priority-score"><div><Target :size="34" /><strong>{{ p1Count }}</strong><span>P1 高优先级</span></div><ul><li><span>P1 高</span><b>{{ p1Count }} 项</b></li><li><span>P2 中</span><b>{{ p2Count }} 项</b></li><li><span>责任人组</span><b>{{ ownerRows.length }} 组</b></li></ul></div>
           </article>
 
           <article class="aging-panel value-panel">
-            <header class="panel-heading compact"><span class="panel-number">9</span><div><h3>潜在价值挖掘</h3><p>VALUE OPPORTUNITY</p></div></header>
+            <header class="panel-heading compact"><span class="panel-number">潜在价值挖掘</span></header>
             <div class="value-body"><div class="value-gem"><Scale :size="36" /></div><dl><div><dt>可优先去化金额</dt><dd>{{ compactMoney(p1Amount) }}</dd></div><div><dt>全部呆滞金额</dt><dd>{{ compactMoney(stagnantAmount) }}</dd></div><div><dt>可推动处置 SKU</dt><dd>{{ stagnantSkus.length }} 个</dd></div></dl></div>
           </article>
 
-          <article class="aging-panel action-center-panel">
-            <header class="panel-heading compact"><span class="panel-number">10</span><div><h3>行动中心</h3><p>QUICK ACTIONS</p></div></header>
-            <div class="action-buttons">
-              <button type="button" @click="focusRisk('呆滞')"><ClipboardCheck :size="22" /><span><strong>呆滞处置建议</strong><small>查看推荐方案</small></span></button>
-              <button type="button" @click="focusRisk('严重呆滞')"><ArrowDownRight :size="22" /><span><strong>严重呆滞清单</strong><small>优先风险处置</small></span></button>
-              <button type="button" @click="scrollToSection(navItems[2])"><UserRoundCheck :size="22" /><span><strong>责任人跟进</strong><small>查看任务归属</small></span></button>
-              <button type="button" @click="exportRiskList"><Download :size="22" /><span><strong>导出处置清单</strong><small>生成 CSV 文件</small></span></button>
-            </div>
-          </article>
         </section>
 
       </main>
@@ -568,8 +533,8 @@ function exportRiskList() {
 }
 @media (prefers-reduced-motion: reduce) { .aging-live i, .aging-kpi, .orbit { animation: none; } }
 
-/* Fixed 1600 x 900 canvas, uniformly scaled to fit any viewport. */
-.aging-page { position: relative; z-index: 1; display: flex; width: 1600px; min-width: 1600px; max-width: none; height: 900px; min-height: 900px; max-height: none; aspect-ratio: 16 / 9; flex: none; flex-direction: column; margin: 0; overflow: hidden; container-type: inline-size; zoom: min(calc(100vw / 1600px), calc(100dvh / 900px)); }
+/* Fixed 1920 x 1080 canvas, uniformly scaled to fit any viewport. */
+.aging-page { position: relative; z-index: 1; display: flex; width: 1920px; min-width: 1920px; max-width: none; height: 1080px; min-height: 1080px; max-height: none; aspect-ratio: 16 / 9; flex: none; flex-direction: column; margin: 0; overflow: hidden; container-type: inline-size; zoom: min(calc(100vw / 1920px), calc(100dvh / 1080px)); }
 .aging-page::before { position: absolute; inset: 0; }
 .aging-hero { min-height: 0; flex: 0 0 clamp(68px, 5.2cqw, 90px); padding: clamp(9px, .8cqw, 14px) clamp(18px, 1.5cqw, 28px); }
 .aging-toolbar { position: relative; top: auto; min-height: 0; flex: 0 0 clamp(38px, 3cqw, 50px); align-items: center; justify-content: flex-end; flex-direction: row; padding: clamp(4px, .38cqw, 7px) clamp(18px, 1.5cqw, 28px); }
@@ -744,7 +709,7 @@ function exportRiskList() {
 .aging-live small { padding-right: 14px; border-right: 1px solid rgba(54,122,190,.28); color: #55789c; font-size: 8px; line-height: 1.6; text-align: right; }
 .aging-live small b { color: #90b8d8; font-weight: 500; }
 .aging-live span { padding: 6px 12px; color: #c1e7ff; border-color: rgba(47,143,220,.4); background: rgba(4,26,57,.72); }
-.aging-toolbar { position: absolute; top: 54px; right: 0; left: 0; z-index: 32; min-height: 0; height: 43px; flex: none; padding: 4px 20px; border-bottom: 0; background: transparent; backdrop-filter: none; }
+.aging-toolbar { position: absolute; top: 54px; right: 0; left: 0; z-index: 32; min-height: 0; height: 43px; justify-content: flex-end; flex: none; padding: 4px 20px; border-bottom: 0; background: transparent; backdrop-filter: none; }
 .aging-tabs { height: 38px; }
 .aging-tabs button { min-width: 108px; padding-inline: 19px; border-color: rgba(23,108,194,.48); color: #8ba6c2; font-size: 11px; background: linear-gradient(180deg, rgba(5,31,65,.88), rgba(2,16,36,.82)); }
 .aging-tabs button.active { color: #d5efff; border-color: #31a8ff; background: linear-gradient(180deg, rgba(24,124,224,.68), rgba(8,52,111,.76)); box-shadow: inset 0 0 18px rgba(60,177,255,.3), 0 0 13px rgba(28,143,255,.34); }
@@ -765,6 +730,7 @@ function exportRiskList() {
 .aging-panel { border-color: rgba(31,151,242,.62); background: linear-gradient(180deg, rgba(4,29,58,.97), rgba(2,17,37,.98)); box-shadow: inset 0 0 0 1px rgba(18,84,151,.34), inset 0 0 30px rgba(14,103,193,.06), 0 0 12px rgba(15,112,220,.12); }
 .panel-heading, .panel-heading.compact { min-height: 34px; padding: 4px 8px; border-bottom-color: rgba(42,137,213,.34); background: linear-gradient(90deg, rgba(17,80,144,.48), rgba(3,30,63,.24) 72%, transparent); }
 .panel-number { min-width: 32px; height: 31px; font-size: 22px; }
+.panel-number { display: inline-flex; width: auto; min-width: 0; align-items: center; justify-content: flex-start; flex: none; padding: 0 28px 0 14px; white-space: nowrap; font-size: 13px; font-style: normal; clip-path: polygon(0 0, 100% 0, calc(100% - 15px) 100%, 0 100%); }
 .panel-heading h3 { color: #e3f2ff; font-size: 13px; }
 .panel-heading p { color: #6083a6; font-size: 6px; }
 .risk-table-wrap { height: calc(100% - 34px); }
@@ -795,7 +761,7 @@ function exportRiskList() {
 .warehouse-bars header span, .warehouse-bars footer em, .owner-row, .owner-row strong, .owner-row small { font-size: 8px; }
 .heat-matrix > strong, .heat-matrix > span, .heat-corner { color: #86a6c0; font-size: 8px; }
 .heat-matrix > div:not(.heat-corner) { border-width: 1px; font-size: 11px; filter: saturate(1.35) brightness(1.12); }
-.aging-secondary-grid { flex-basis: 158px; grid-template-columns: 1.05fr .78fr .88fr 1.22fr; gap: 12px; }
+.aging-secondary-grid { flex-basis: 158px; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .readiness-ring { width: 88px; height: 88px; box-shadow: 0 0 18px rgba(61,222,209,.28); }
 .readiness-ring strong { font-size: 23px; }
 .priority-score > div strong { font-size: 29px; }
