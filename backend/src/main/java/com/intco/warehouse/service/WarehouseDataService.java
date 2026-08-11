@@ -115,6 +115,87 @@ public class WarehouseDataService {
                 .collect(Collectors.toList());
     }
 
+    public Map<String, Object> inventoryAgingSnapshot() {
+        CompletableFuture<List<InventoryAgeRuleEntity>> ruleQuery = queryExecutor.submit(() ->
+                inventoryAgeRuleMapper.selectList(Wrappers.lambdaQuery(InventoryAgeRuleEntity.class)
+                        .orderByAsc(InventoryAgeRuleEntity::getRuleType, InventoryAgeRuleEntity::getRuleName)));
+        CompletableFuture<List<InventoryAgeBatchEntity>> batchQuery = queryExecutor.submit(() ->
+                inventoryAgeBatchMapper.selectList(Wrappers.lambdaQuery(InventoryAgeBatchEntity.class)
+                        .orderByDesc(InventoryAgeBatchEntity::getSnapshotDate)
+                        .orderByAsc(InventoryAgeBatchEntity::getWarehouseId, InventoryAgeBatchEntity::getAgeBatchId)));
+        CompletableFuture<List<InventoryAgeSkuEntity>> skuQuery = queryExecutor.submit(() ->
+                inventoryAgeSkuMapper.selectList(Wrappers.lambdaQuery(InventoryAgeSkuEntity.class)
+                        .orderByDesc(InventoryAgeSkuEntity::getSnapshotDate)
+                        .orderByAsc(InventoryAgeSkuEntity::getWarehouseId, InventoryAgeSkuEntity::getProjectNo,
+                                InventoryAgeSkuEntity::getMaterialCode)));
+        queryExecutor.awaitAll(ruleQuery, batchQuery, skuQuery);
+
+        List<InventoryAgeBatchEntity> batchHistory = queryExecutor.await(batchQuery);
+        List<InventoryAgeSkuEntity> skuHistory = queryExecutor.await(skuQuery);
+        LocalDate latestBatchDate = batchHistory.stream().map(InventoryAgeBatchEntity::getSnapshotDate)
+                .max(LocalDate::compareTo).orElse(null);
+        LocalDate latestSkuDate = skuHistory.stream().map(InventoryAgeSkuEntity::getSnapshotDate)
+                .max(LocalDate::compareTo).orElse(null);
+
+        List<Map<String, Object>> batches = batchHistory.stream()
+                .filter(row -> latestBatchDate == null || latestBatchDate.equals(row.getSnapshotDate()))
+                .map(row -> mapOf(
+                        "snapshotDate", row.getSnapshotDate(), "batchId", row.getAgeBatchId(),
+                        "warehouseId", row.getWarehouseId(), "warehouseName", row.getWarehouseName(),
+                        "warehouseType", row.getWarehouseType(), "projectNo", row.getProjectNo(),
+                        "projectName", row.getProjectName(), "materialCode", row.getMaterialCode(),
+                        "materialName", row.getMaterialName(), "sku", row.getProjectMaterialSku(),
+                        "materialCategory", row.getMaterialCategory(), "model", row.getModel(), "uom", row.getUom(),
+                        "batchNo", row.getBatchNo(), "receiptDate", row.getReceiptDate(), "ageDays", row.getAgeDays(),
+                        "ageBucket", row.getAgeBucket(), "onHandQty", number(row.getBatchOnHandQty()),
+                        "availableQty", number(row.getAvailableQty()), "inventoryAmount", number(row.getInventoryAmount()),
+                        "lastOutboundDate", row.getLastOutboundDate(), "daysSinceLastOutbound", row.getDaysSinceLastOutbound(),
+                        "outboundRate30d", number(row.getOutboundRate30d()), "movementStatus", row.getMovementStatus(),
+                        "stagnantLevel", row.getStagnantLevel(), "isStagnant", Boolean.TRUE.equals(row.getIsStagnant()),
+                        "stagnantScore", number(row.getStagnantScore()), "priority", row.getPriority(),
+                        "recommendedAction", row.getRecommendedAction(), "owner", row.getOwner()))
+                .collect(Collectors.toList());
+
+        List<Map<String, Object>> skus = skuHistory.stream()
+                .filter(row -> latestSkuDate == null || latestSkuDate.equals(row.getSnapshotDate()))
+                .sorted(Comparator.comparing((InventoryAgeSkuEntity row) -> Boolean.TRUE.equals(row.getIsStagnant())).reversed()
+                        .thenComparing(InventoryAgeSkuEntity::getMaxAgeDays, Comparator.nullsLast(Comparator.reverseOrder())))
+                .map(row -> mapOf(
+                        "snapshotDate", row.getSnapshotDate(), "warehouseId", row.getWarehouseId(),
+                        "warehouseName", row.getWarehouseName(), "warehouseType", row.getWarehouseType(),
+                        "projectNo", row.getProjectNo(), "projectName", row.getProjectName(),
+                        "materialCode", row.getMaterialCode(), "materialName", row.getMaterialName(),
+                        "sku", row.getProjectMaterialSku(), "materialCategory", row.getMaterialCategory(),
+                        "color", row.getColor(), "model", row.getModel(), "uom", row.getUom(),
+                        "batchCount", row.getBatchCount(), "onHandQty", number(row.getOnHandQty()),
+                        "availableQty", number(row.getAvailableQty()), "inventoryAmount", number(row.getInventoryAmount()),
+                        "weightedAvgAgeDays", number(row.getWeightedAvgAgeDays()), "maxAgeDays", row.getMaxAgeDays(),
+                        "dominantAgeBucket", row.getDominantAgeBucket(), "outboundQty30d", number(row.getOutboundQty30d()),
+                        "outboundRate30d", number(row.getOutboundRate30d()), "latestOutboundDate", row.getLatestSkuOutboundDate(),
+                        "daysSinceLastOutbound", row.getDaysSinceLastSkuOutbound(), "stagnantBatchCount", row.getStagnantBatchCount(),
+                        "stagnantInventoryAmount", number(row.getStagnantInventoryAmount()),
+                        "stagnationRatio", number(row.getStagnationRatio()), "stagnantLevel", row.getStagnantLevel(),
+                        "isStagnant", Boolean.TRUE.equals(row.getIsStagnant()), "stagnantScore", number(row.getStagnantScore()),
+                        "priority", row.getPriority(), "recommendedAction", row.getRecommendedAction(), "owner", row.getOwner()))
+                .collect(Collectors.toList());
+
+        List<Map<String, Object>> rules = queryExecutor.await(ruleQuery).stream()
+                .map(row -> mapOf("type", row.getRuleType(), "name", row.getRuleName(),
+                        "condition", row.getRuleCondition(), "level", row.getResultLevel(),
+                        "action", row.getActionGuidance(), "scope", row.getApplicableScope()))
+                .collect(Collectors.toList());
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("meta", mapOf("snapshotDate", latestBatchDate != null ? latestBatchDate : latestSkuDate,
+                "source", "MySQL · inventory_age_batch / inventory_age_sku",
+                "batchCount", batches.size(), "skuCount", skus.size(), "stagnantThresholdDays", 180,
+                "severeThresholdDays", 365, "noMovementThresholdDays", 90));
+        result.put("rules", rules);
+        result.put("batches", batches);
+        result.put("skus", skus);
+        return result;
+    }
+
     public Optional<Map<String, Object>> warehouseSnapshot(String warehouseId, int requestedRange) {
         WarehouseEntity warehouseRow = warehouseMapper.selectById(warehouseId);
         if (warehouseRow == null) return Optional.empty();

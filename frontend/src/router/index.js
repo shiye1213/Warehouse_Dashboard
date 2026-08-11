@@ -4,6 +4,7 @@ const routes = [
   { path: '/', redirect: '/raw-material' },
   { path: '/finished-goods', name: 'finished-goods', component: () => import('../views/ExecutiveDashboard.vue'), meta: { title: '成品库看板', eyebrow: 'FINISHED GOODS WAREHOUSE' } },
   { path: '/raw-material', name: 'raw-material', component: () => import('../views/RawMaterialDashboard.vue'), meta: { title: '原料库看板', eyebrow: 'RAW MATERIAL WAREHOUSE' } },
+  { path: '/inventory-aging', name: 'inventory-aging', component: () => import('../views/InventoryAgingDashboard.vue'), meta: { title: '库存健康管理', eyebrow: 'INVENTORY HEALTH & AGING' } },
   { path: '/operations', name: 'operations', component: () => import('../views/OperationsView.vue'), meta: { title: '作业运营', eyebrow: 'OPERATIONS' } },
   { path: '/performance', name: 'performance', component: () => import('../views/PerformanceView.vue'), meta: { title: '履约质量', eyebrow: 'SERVICE PERFORMANCE' } },
   { path: '/zones', name: 'zones', component: () => import('../views/ZonesView.vue'), meta: { title: '空间与库存', eyebrow: 'SPACE & INVENTORY' } },

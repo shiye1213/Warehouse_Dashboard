@@ -12,6 +12,7 @@ async function request(path, options = {}) {
 
 export const dashboardApi = {
   getSnapshot: (range = 31) => request(`/dashboard/overview?range=${range}`),
+  getInventoryAging: () => request('/dashboard/inventory-aging'),
   getWarehouseSnapshot: (warehouseId, range = 31) => request(`/dashboard/warehouses/${encodeURIComponent(warehouseId)}?range=${range}`),
   getWarehouses: () => request('/warehouses'),
   getDataStatus: () => request('/data/status'),
