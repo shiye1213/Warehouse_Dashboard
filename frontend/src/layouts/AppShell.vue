@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Boxes,
   ChevronLeft,
+  Clock3,
   Database,
   Download,
   Hand,
@@ -31,7 +32,7 @@ const collapsed = ref(localStorage.getItem('warehouse.sidebar.collapsed') === 't
 const mobileOpen = ref(false)
 const now = ref(new Date())
 const { snapshot } = useDashboard()
-const scopeVisible = computed(() => !['finished-goods', 'raw-material', 'data-center', 'zone-detail'].includes(String(route.name || '')))
+const scopeVisible = computed(() => !['finished-goods', 'raw-material', 'inventory-aging', 'data-center', 'zone-detail'].includes(String(route.name || '')))
 useRawMaterialDashboard()
 const { refreshing, refreshProject } = useProjectRefresh()
 
@@ -39,6 +40,7 @@ const navItems = [
   { to: '/raw-material', label: '原料库看板', note: '生产保障与库存风险', icon: PackageSearch },
   { to: '/finished-goods', label: '成品库看板', note: '成品库运营视图', icon: Hand },
   { to: '/box-dashboard', label: '箱盒库看板', note: '包装物料周转中心', icon: Boxes },
+  { to: '/inventory-aging', label: '库存健康与呆滞', note: '库龄预警与责任跟进', icon: Clock3 },
   { to: '/operations', label: '作业运营', note: '入库 · 拣货 · 出库', icon: Route },
   { to: '/performance', label: '履约质量', note: '时效与准确率', icon: ShieldCheck },
   { to: '/zones', label: '空间与库存', note: '库容与库区状态', icon: Boxes },
@@ -87,7 +89,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'is-collapsed': collapsed, 'is-mobile-open': mobileOpen, 'is-board-route': ['finished-goods', 'raw-material'].includes(route.name), 'is-data-refreshing': refreshing }" :aria-busy="refreshing">
+  <div class="app-shell" :class="{ 'is-collapsed': collapsed, 'is-mobile-open': mobileOpen, 'is-board-route': ['finished-goods', 'raw-material', 'inventory-aging'].includes(route.name), 'is-data-refreshing': refreshing }" :aria-busy="refreshing">
     <button v-if="mobileOpen" class="mobile-scrim" aria-label="关闭导航" @click="mobileOpen = false" />
 
     <aside class="sidebar" aria-label="主导航">

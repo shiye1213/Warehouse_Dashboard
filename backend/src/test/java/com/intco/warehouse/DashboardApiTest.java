@@ -96,6 +96,18 @@ class DashboardApiTest {
     }
 
     @Test
+    void inventoryAgingDashboardExposesRulesBatchesAndSkuRisks() throws Exception {
+        mvc.perform(get("/api/dashboard/inventory-aging"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.meta.snapshotDate").value("2026-07-31"))
+                .andExpect(jsonPath("$.meta.stagnantThresholdDays").value(180))
+                .andExpect(jsonPath("$.rules", hasSize(10)))
+                .andExpect(jsonPath("$.batches", hasSize(171)))
+                .andExpect(jsonPath("$.skus", hasSize(38)))
+                .andExpect(jsonPath("$.skus[0].isStagnant").value(true));
+    }
+
+    @Test
     @DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
     void rawMaterialDashboardReflectsMybatisPlusDatabaseChanges() throws Exception {
         BigDecimal databaseValue = new BigDecimal("123.4567");
@@ -160,6 +172,7 @@ class DashboardApiTest {
                 .andExpect(jsonPath("$.info.title").value("仓库运营看板 API"))
                 .andExpect(jsonPath("$.paths['/api/dashboard/overview']").exists())
                 .andExpect(jsonPath("$.paths['/api/dashboard/warehouses/{warehouseId}']").exists())
+                .andExpect(jsonPath("$.paths['/api/dashboard/inventory-aging']").exists())
                 .andExpect(jsonPath("$.paths['/api/data/import']").exists())
                 .andExpect(jsonPath("$.paths['/api/data/export']").exists());
         mvc.perform(get("/swagger-ui.html"))

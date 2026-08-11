@@ -45,6 +45,12 @@ public class DashboardController {
                 .map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
 
+    @Operation(summary = "查询库存库龄与呆滞风险数据", description = "返回最新快照的判定规则、批次明细和 SKU 级呆滞汇总")
+    @GetMapping("/dashboard/inventory-aging")
+    public Map<String, Object> inventoryAging() {
+        return dataService.inventoryAgingSnapshot();
+    }
+
     @Operation(summary = "查询库区详情")
     @GetMapping("/zones/{code}")
     public ResponseEntity<Map<String, Object>> zone(@PathVariable String code) {
