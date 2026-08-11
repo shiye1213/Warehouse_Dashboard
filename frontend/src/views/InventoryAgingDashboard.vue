@@ -568,8 +568,8 @@ function exportRiskList() {
 }
 @media (prefers-reduced-motion: reduce) { .aging-live i, .aging-kpi, .orbit { animation: none; } }
 
-/* Fixed 1600 x 900 canvas, uniformly scaled to fit any viewport. */
-.aging-page { position: relative; z-index: 1; display: flex; width: 1600px; min-width: 1600px; max-width: none; height: 900px; min-height: 900px; max-height: none; aspect-ratio: 16 / 9; flex: none; flex-direction: column; margin: 0; overflow: hidden; container-type: inline-size; zoom: min(calc(100vw / 1600px), calc(100dvh / 900px)); }
+/* Fixed 1920 x 1080 canvas, uniformly scaled to fit any viewport. */
+.aging-page { position: relative; z-index: 1; display: flex; width: 1920px; min-width: 1920px; max-width: none; height: 1080px; min-height: 1080px; max-height: none; aspect-ratio: 16 / 9; flex: none; flex-direction: column; margin: 0; overflow: hidden; container-type: inline-size; zoom: min(calc(100vw / 1920px), calc(100dvh / 1080px)); }
 .aging-page::before { position: absolute; inset: 0; }
 .aging-hero { min-height: 0; flex: 0 0 clamp(68px, 5.2cqw, 90px); padding: clamp(9px, .8cqw, 14px) clamp(18px, 1.5cqw, 28px); }
 .aging-toolbar { position: relative; top: auto; min-height: 0; flex: 0 0 clamp(38px, 3cqw, 50px); align-items: center; justify-content: flex-end; flex-direction: row; padding: clamp(4px, .38cqw, 7px) clamp(18px, 1.5cqw, 28px); }
