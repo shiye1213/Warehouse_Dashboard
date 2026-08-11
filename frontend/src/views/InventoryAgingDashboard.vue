@@ -730,16 +730,18 @@ function exportRiskList() {
 .aging-panel { border-color: rgba(31,151,242,.62); background: linear-gradient(180deg, rgba(4,29,58,.97), rgba(2,17,37,.98)); box-shadow: inset 0 0 0 1px rgba(18,84,151,.34), inset 0 0 30px rgba(14,103,193,.06), 0 0 12px rgba(15,112,220,.12); }
 .panel-heading, .panel-heading.compact { min-height: 34px; padding: 4px 8px; border-bottom-color: rgba(42,137,213,.34); background: linear-gradient(90deg, rgba(17,80,144,.48), rgba(3,30,63,.24) 72%, transparent); }
 .panel-number { min-width: 32px; height: 31px; font-size: 22px; }
-.panel-number { display: inline-flex; width: auto; min-width: 0; align-items: center; justify-content: flex-start; flex: none; padding: 0 28px 0 14px; white-space: nowrap; font-size: 13px; font-style: normal; clip-path: polygon(0 0, 100% 0, calc(100% - 15px) 100%, 0 100%); }
+.panel-number { display: inline-flex; width: auto; min-width: 0; align-items: center; justify-content: flex-start; flex: none; padding: 0 28px 0 14px; white-space: nowrap; font-size: 16px; font-style: normal; clip-path: polygon(0 0, 100% 0, calc(100% - 15px) 100%, 0 100%); }
 .panel-heading h3 { color: #e3f2ff; font-size: 13px; }
 .panel-heading p { color: #6083a6; font-size: 6px; }
 .risk-table-wrap { height: calc(100% - 34px); }
-.risk-table-wrap th { height: 24px; font-size: 8px; }
-.risk-table-wrap th, .risk-table-wrap td { padding: 4px 6px; }
-.risk-table-wrap th, .risk-table-wrap td { padding-block: 3px; }
-.risk-table-wrap td small { margin-top: 1px; }
-.risk-table-wrap td { font-size: 8px; }
-.risk-table-wrap td strong { font-size: 9px; }
+.risk-table-wrap th { height: 32px; font-size: 11px; }
+.risk-table-wrap th, .risk-table-wrap td { padding: 7px 9px; }
+.risk-table-wrap td { font-size: 11px; line-height: 1.25; }
+.risk-table-wrap td strong { font-size: 13px; }
+.risk-table-wrap td small { margin-top: 3px; font-size: 8px; }
+.risk-table-wrap td b { font-size: 14px; }
+.risk-list-panel .risk-level { min-width: 58px; padding: 4px 8px; font-size: 9px; }
+.risk-list-panel .panel-heading button { height: 28px; font-size: 10px; }
 .bucket-list button span, .bucket-list button b { font-size: 9px; }
 .distribution-body { grid-template-columns: 132px 1fr; gap: 7px; padding: 7px 10px 5px; }
 .aging-donut { width: 118px; height: 118px; }
@@ -765,6 +767,47 @@ function exportRiskList() {
 .readiness-ring { width: 88px; height: 88px; box-shadow: 0 0 18px rgba(61,222,209,.28); }
 .readiness-ring strong { font-size: 23px; }
 .priority-score > div strong { font-size: 29px; }
+
+/* Readability pass for the remaining 1920 x 1080 wallboard modules. */
+.aging-kpi span { font-size: 12px; }
+.aging-kpi strong { font-size: 27px; }
+.aging-kpi small { font-size: 10px; }
+.aging-donut small, .aging-donut em { font-size: 9px; }
+.aging-donut strong { font-size: 18px; }
+.bucket-list button { min-height: 30px; }
+.bucket-list button span, .bucket-list button b { font-size: 11px; }
+.bucket-list button span small { font-size: 9px; }
+.bucket-list button em { font-size: 10px; }
+.distribution-panel > footer span { font-size: 11px; }
+.distribution-panel > footer b { font-size: 13px; }
+.health-label.top span { font-size: 10px; }
+.health-label.top em { font-size: 9px; }
+.health-satellite small { font-size: 9px; }
+.health-satellite strong { font-size: 30px; }
+.health-satellite em { font-size: 9px; }
+.health-rule { font-size: 10px; }
+.health-rule strong { font-size: 11px; }
+.warning-grid small, .warning-grid em { font-size: 9px; }
+.warning-grid strong { font-size: 22px; }
+.warehouse-bars header strong, .warehouse-bars footer b { font-size: 12px; }
+.warehouse-bars header span, .warehouse-bars footer em { font-size: 10px; }
+.right-column .heat-matrix > * { min-height: 26px; }
+.heat-matrix > strong, .heat-matrix > span, .heat-corner { font-size: 10px; }
+.heat-matrix > div:not(.heat-corner) { font-size: 13px; }
+.heat-legend span { font-size: 9px; }
+.right-column .owner-head, .right-column .owner-row { min-height: 25px; }
+.owner-head { font-size: 10px; }
+.owner-row, .owner-row strong { font-size: 11px; }
+.owner-row small { font-size: 10px; }
+.readiness-ring small { font-size: 9px; }
+.readiness-list p { font-size: 10px; }
+.readiness-list > small { font-size: 8px; }
+.priority-score > div span { font-size: 9px; }
+.priority-score li { padding-block: 6px; font-size: 10px; }
+.value-body dl div { padding-block: 7px; }
+.value-body dt { font-size: 10px; }
+.value-body dd { font-size: 12px; }
+.unit-note, .source-note { font-size: 9px; }
 .action-buttons { height: calc(100% - 34px); gap: 0; padding: 6px 4px; }
 .action-buttons button { min-height: 0; flex-direction: column; gap: 6px; border: 0; border-left: 1px solid rgba(42,113,180,.18); background: transparent; }
 .action-buttons button:first-child { border-left: 0; }
