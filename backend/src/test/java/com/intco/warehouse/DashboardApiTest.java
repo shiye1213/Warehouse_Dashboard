@@ -141,11 +141,7 @@ class DashboardApiTest {
         Number expectedOnHand = JsonPath.read(before, "$.summary.stockOnHandTon");
         Number expectedAvailable = JsonPath.read(before, "$.summary.stockAvailableTon");
 
-        InventorySnapshotEntity latest = inventorySnapshotMapper.selectList(
-                Wrappers.lambdaQuery(InventorySnapshotEntity.class)
-                        .eq(InventorySnapshotEntity::getWarehouseId, "WH-RM01")
-                        .orderByDesc(InventorySnapshotEntity::getStockDate)
-                        .last("LIMIT 1")).get(0);
+        InventorySnapshotEntity latest = inventorySnapshotMapper.selectJoined("WH-RM01").get(0);
         InventorySnapshotEntity historical = new InventorySnapshotEntity();
         BeanUtils.copyProperties(latest, historical);
         historical.setStockDate(latest.getStockDate().minusDays(1));
@@ -239,6 +235,7 @@ class DashboardApiTest {
     void dataStatusExposesInventoryAgingCounts() throws Exception {
         mvc.perform(get("/api/data/status"))
                 .andExpect(status().isOk())
+                .andExpect(jsonPath("$.warehouseSkuBases", greaterThan(0)))
                 .andExpect(jsonPath("$.inventoryAgeRules").value(10))
                 .andExpect(jsonPath("$.inventoryAgeBatches").value(171))
                 .andExpect(jsonPath("$.inventoryAgeSkus").value(38));

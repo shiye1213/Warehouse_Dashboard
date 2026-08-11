@@ -269,12 +269,12 @@ public class ImportExportService {
 
     private Dataset areaDataset() {
         String[] names = {"snapshot_date|快照日期","warehouse_id|仓库编码","warehouse_name|仓库名称","warehouse_type|仓库类型","area_id|库区编码","area_name|库区名称","capacity_locations|容量库位数","occupied_locations|已占库位数","available_locations|可用库位数","occupancy_rate|库区占用率%","material_type_count|物料种类数","abnormal_location_count|异常库位数","frozen_qty|冻结数量","area_owner|库区负责人","status|库区状态"};
-        return new Dataset("运营_库区状态", "运营_库区状态", "库区每日状态快照。", "SELECT * FROM warehouse_area_snapshot ORDER BY snapshot_date,warehouse_id,area_id", columns(names));
+        return new Dataset("运营_库区状态", "运营_库区状态", "库区每日状态快照。", "AREA_SNAPSHOT", columns(names));
     }
 
     private Dataset exceptionDataset() {
         String[] names = {"event_id|异常编号","event_time|发生时间","event_type|异常类型","warehouse_id|仓库编码","warehouse_name|仓库名称","warehouse_type|仓库类型","project_no|项目号","project_name|项目名称","material_code|物料编码","material_name|物料名称","project_material_sku|项目物料 SKU","material_category|物料分类","color|颜色","model|型号","uom|计量单位","packaging_level|包材层级","area_id|库区编码","area_name|库区名称","severity|严重等级","handling_status|处理状态","owner|责任人","response_minutes|响应时长","sla_hours|SLA 时限","deadline_time|SLA 截止时间","close_time|关闭时间","duration_minutes|关闭耗时","is_sla_breached|是否超 SLA","root_cause|根因","action_taken|处理措施","remark|备注"};
-        return new Dataset("运营_异常事件", "运营_异常事件", "异常事件全生命周期明细。", "SELECT * FROM exception_event ORDER BY event_time,event_id", columns(names));
+        return new Dataset("运营_异常事件", "运营_异常事件", "异常事件全生命周期明细。", "EXCEPTION", columns(names));
     }
 
     private Dataset bomDataset() {

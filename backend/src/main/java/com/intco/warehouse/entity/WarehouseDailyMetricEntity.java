@@ -1,6 +1,7 @@
 package com.intco.warehouse.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import java.math.BigDecimal;
@@ -8,13 +9,11 @@ import java.time.LocalDate;
 import lombok.Data;
 
 @Data
-@TableName("warehouse_daily_metric")
+@TableName("warehouse_daily_metric_fact")
 public class WarehouseDailyMetricEntity {
     @TableId(value = "biz_date", type = IdType.INPUT)
     private LocalDate bizDate;
     private String warehouseId;
-    private String warehouseName;
-    private String warehouseType;
     private Integer inboundOrderCount;
     private Integer outboundOrderCount;
     private BigDecimal rawInboundTon;
@@ -33,4 +32,8 @@ public class WarehouseDailyMetricEntity {
     private BigDecimal avgPickingMinutes;
     private BigDecimal dockUtilizationRate;
     private BigDecimal overtimeHours;
+    @TableField(exist = false)
+    private String warehouseName;
+    @TableField(exist = false)
+    private String warehouseType;
 }

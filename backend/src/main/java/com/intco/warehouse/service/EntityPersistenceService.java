@@ -2,6 +2,7 @@ package com.intco.warehouse.service;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.intco.warehouse.entity.*;
 import com.intco.warehouse.mapper.*;
 import java.lang.reflect.Field;
@@ -16,6 +17,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class EntityPersistenceService {
     private final WarehouseMapper warehouseMapper;
+    private final WarehouseSkuBaseMapper warehouseSkuBaseMapper;
     private final InventorySnapshotMapper inventorySnapshotMapper;
     private final SkuDailyMetricMapper skuDailyMetricMapper;
     private final WarehouseDailyMetricMapper warehouseDailyMetricMapper;
@@ -30,6 +32,7 @@ public class EntityPersistenceService {
 
     public EntityPersistenceService(
             WarehouseMapper warehouseMapper,
+            WarehouseSkuBaseMapper warehouseSkuBaseMapper,
             InventorySnapshotMapper inventorySnapshotMapper,
             SkuDailyMetricMapper skuDailyMetricMapper,
             WarehouseDailyMetricMapper warehouseDailyMetricMapper,
@@ -42,6 +45,7 @@ public class EntityPersistenceService {
             InventoryAgeSkuMapper inventoryAgeSkuMapper,
             DataImportJobMapper dataImportJobMapper) {
         this.warehouseMapper = warehouseMapper;
+        this.warehouseSkuBaseMapper = warehouseSkuBaseMapper;
         this.inventorySnapshotMapper = inventorySnapshotMapper;
         this.skuDailyMetricMapper = skuDailyMetricMapper;
         this.warehouseDailyMetricMapper = warehouseDailyMetricMapper;
@@ -55,8 +59,8 @@ public class EntityPersistenceService {
         this.dataImportJobMapper = dataImportJobMapper;
     }
 
-    public boolean isWarehouseEmpty() {
-        return warehouseMapper.selectCount(null) == 0;
+    public boolean isWarehouseSkuBaseEmpty() {
+        return warehouseSkuBaseMapper.selectCount(null) == 0;
     }
 
     public List<WarehouseEntity> warehouses() {
@@ -67,7 +71,21 @@ public class EntityPersistenceService {
         return warehouseMapper.selectById(warehouseId);
     }
 
-    public void insertWarehouses(List<Object[]> rows) { insertRows(rows, WarehouseEntity.class, warehouseMapper); }
+    public void insertWarehouses(List<Object[]> rows) {
+        for (Object[] row : rows) {
+            WarehouseEntity entity = new WarehouseEntity();
+            entity.setWarehouseId((String) row[0]);
+            entity.setWarehouseName((String) row[1]);
+            entity.setWarehouseType((String) row[2]);
+            entity.setWarehouseRole((String) row[3]);
+            entity.setAreaCount((Integer) row[4]);
+            entity.setCapacityLocations((Integer) row[5]);
+            entity.setWarehouseOwner((String) row[6]);
+            if (warehouseMapper.selectById(entity.getWarehouseId()) == null) warehouseMapper.insert(entity);
+            else warehouseMapper.updateById(entity);
+        }
+    }
+    public void insertWarehouseSkuBases(List<Object[]> rows) { insertRows(rows, WarehouseSkuBaseEntity.class, warehouseSkuBaseMapper); }
     public void insertInventory(List<Object[]> rows) { insertRows(rows, InventorySnapshotEntity.class, inventorySnapshotMapper); }
     public void insertSkuDaily(List<Object[]> rows) { insertRows(rows, SkuDailyMetricEntity.class, skuDailyMetricMapper); }
     public void insertWarehouseDaily(List<Object[]> rows) { insertRows(rows, WarehouseDailyMetricEntity.class, warehouseDailyMetricMapper); }
@@ -96,7 +114,7 @@ public class EntityPersistenceService {
         inventoryAgeBatchMapper.delete(null);
         inventoryAgeSkuMapper.delete(null);
         inventoryAgeRuleMapper.delete(null);
-        warehouseMapper.delete(null);
+        warehouseSkuBaseMapper.delete(null);
     }
 
     public void insertImportJob(String id, String fileName, String type, int rows,
@@ -125,6 +143,10 @@ public class EntityPersistenceService {
     private static <T> void insertRows(List<Object[]> rows, Class<T> entityType, BaseMapper<T> mapper) {
         List<Field> fields = Arrays.stream(entityType.getDeclaredFields())
                 .filter(field -> !Modifier.isStatic(field.getModifiers()))
+                .filter(field -> {
+                    TableField mapping = field.getAnnotation(TableField.class);
+                    return mapping == null || mapping.exist();
+                })
                 .collect(Collectors.toList());
         for (Object[] values : rows) {
             if (values.length > fields.size()) {

@@ -9,22 +9,11 @@ import java.time.LocalDate;
 import lombok.Data;
 
 @Data
-@TableName("inventory_age_sku")
+@TableName("inventory_age_sku_fact")
 public class InventoryAgeSkuEntity {
     @TableId(value = "snapshot_date", type = IdType.INPUT)
     private LocalDate snapshotDate;
-    private String warehouseId;
-    private String warehouseName;
-    private String warehouseType;
-    private String projectNo;
-    private String projectName;
-    private String materialCode;
-    private String materialName;
-    private String projectMaterialSku;
-    private String materialCategory;
-    private String color;
-    private String model;
-    private String uom;
+    private String warehouseSkuKey;
     private Integer batchCount;
     private BigDecimal onHandQty;
     private BigDecimal availableQty;
@@ -47,4 +36,28 @@ public class InventoryAgeSkuEntity {
     private String priority;
     private String recommendedAction;
     private String owner;
+    @TableField(exist = false)
+    private String warehouseId;
+    @TableField(exist = false)
+    private String warehouseName;
+    @TableField(exist = false)
+    private String warehouseType;
+    @TableField(exist = false)
+    private String projectNo;
+    @TableField(exist = false)
+    private String projectName;
+    @TableField(exist = false)
+    private String materialCode;
+    @TableField(exist = false)
+    private String materialName;
+    @TableField(exist = false)
+    private String projectMaterialSku;
+    @TableField(exist = false)
+    private String materialCategory;
+    @TableField(exist = false)
+    private String color;
+    @TableField(exist = false)
+    private String model;
+    @TableField(exist = false)
+    private String uom;
 }

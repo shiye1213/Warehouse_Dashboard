@@ -51,15 +51,15 @@ public class EntityExportService {
 
     public List<Map<String, Object>> rows(String query, String firstColumn, int columnCount) {
         if ("AGE_RULE".equals(query)) return toRows(inventoryAgeRuleMapper.selectList(null));
-        if ("AGE_BATCH".equals(query)) return toRows(inventoryAgeBatchMapper.selectList(null));
-        if ("AGE_SKU".equals(query)) return toRows(inventoryAgeSkuMapper.selectList(null));
+        if ("AGE_BATCH".equals(query)) return toRows(inventoryAgeBatchMapper.selectJoined());
+        if ("AGE_SKU".equals(query)) return toRows(inventoryAgeSkuMapper.selectJoined());
         if ("warehouse_id".equals(firstColumn)) return toRows(warehouseMapper.selectList(null));
-        if ("warehouse_name".equals(firstColumn)) return toRows(inventorySnapshotMapper.selectList(null));
+        if ("warehouse_name".equals(firstColumn)) return toRows(inventorySnapshotMapper.selectJoined(null));
         if ("biz_date".equals(firstColumn)) {
-            return columnCount == 33 ? toRows(skuDailyMetricMapper.selectList(null)) : toRows(warehouseDailyMetricMapper.selectList(null));
+            return columnCount == 33 ? toRows(skuDailyMetricMapper.selectJoined(null)) : toRows(warehouseDailyMetricMapper.selectJoined(null));
         }
-        if ("snapshot_date".equals(firstColumn)) return toRows(warehouseAreaSnapshotMapper.selectList(null));
-        if ("event_id".equals(firstColumn)) return toRows(exceptionEventMapper.selectList(null));
+        if ("snapshot_date".equals(firstColumn)) return toRows(warehouseAreaSnapshotMapper.selectJoined(null));
+        if ("event_id".equals(firstColumn)) return toRows(exceptionEventMapper.selectJoined(null, null));
         if ("project_no".equals(firstColumn)) return toRows(bomRelationMapper.selectList(null));
         if ("kpi_name".equals(firstColumn)) return toRows(kpiTargetMapper.selectList(null));
         throw new IllegalArgumentException("Unsupported export dataset");

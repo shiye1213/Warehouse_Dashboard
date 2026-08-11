@@ -55,7 +55,7 @@ public class WarehouseImportService {
     }
 
     public boolean isEmpty() {
-        return persistenceService.isWarehouseEmpty();
+        return persistenceService.isWarehouseSkuBaseEmpty();
     }
 
     @Transactional
@@ -72,6 +72,7 @@ public class WarehouseImportService {
 
             clearBusinessTables();
             persistenceService.insertWarehouses(warehouses);
+            persistenceService.insertWarehouseSkuBases(readWarehouseSkuBases(workbook));
 
             int importedRows = warehouses.size();
             importedRows += importInventory(workbook);
@@ -158,16 +159,71 @@ public class WarehouseImportService {
         return rows;
     }
 
+    private List<Object[]> readWarehouseSkuBases(Workbook workbook) {
+        Map<String, Object[]> bases = new LinkedHashMap<>();
+        Table skuDaily = Table.open(workbook, "运营_SKU日指标", "warehouse_sku_key");
+        skuDaily.forEach(row -> {
+            String key = skuDaily.requiredText(row, "warehouse_sku_key");
+            bases.putIfAbsent(key, new Object[]{key, skuDaily.requiredText(row, "warehouse_id"),
+                    skuDaily.requiredText(row, "project_no"), skuDaily.text(row, "project_name"),
+                    skuDaily.requiredText(row, "material_code"), skuDaily.requiredText(row, "material_name"),
+                    skuDaily.requiredText(row, "project_material_sku"), skuDaily.text(row, "material_category"),
+                    skuDaily.text(row, "color"), skuDaily.text(row, "model"), skuDaily.requiredText(row, "uom"),
+                    skuDaily.text(row, "packaging_level"), null, null, null, null});
+        });
+
+        Map<String, String> warehouseIds = warehouseIdsByName();
+        Table inventory = Table.open(workbook, "现存量快照", "material_code");
+        inventory.forEach(row -> {
+            String warehouseId = requiredWarehouseId(warehouseIds, inventory.requiredText(row, "warehouse_name"));
+            String projectSku = inventory.requiredText(row, "project_material_sku");
+            String key = skuKey(warehouseId, projectSku);
+            Object[] base = bases.computeIfAbsent(key, ignored -> new Object[]{key, warehouseId,
+                    inventory.requiredText(row, "project_no"), null, inventory.requiredText(row, "material_code"),
+                    inventory.requiredText(row, "material_name"), projectSku, null, inventory.text(row, "color_code"),
+                    inventory.text(row, "model"), inventory.requiredText(row, "main_uom"), null, null, null, null, null});
+            base[12] = inventory.text(row, "customer_item");
+            base[13] = inventory.text(row, "product_index_no");
+            base[14] = inventory.text(row, "glove_size");
+            base[15] = inventory.text(row, "specification");
+            if (isBlank(base[8])) base[8] = inventory.text(row, "color_code");
+            if (isBlank(base[9])) base[9] = inventory.text(row, "model");
+        });
+
+        Table ageSku = Table.open(workbook, AGE_SKU_SHEET, "project_material_sku");
+        ageSku.forEach(row -> {
+            String warehouseId = ageSku.requiredText(row, "warehouse_id");
+            String projectSku = ageSku.requiredText(row, "project_material_sku");
+            String key = skuKey(warehouseId, projectSku);
+            bases.putIfAbsent(key, new Object[]{key, warehouseId, ageSku.requiredText(row, "project_no"),
+                    ageSku.text(row, "project_name"), ageSku.requiredText(row, "material_code"),
+                    ageSku.requiredText(row, "material_name"), projectSku, ageSku.text(row, "material_category"),
+                    ageSku.text(row, "color"), ageSku.text(row, "model"), ageSku.requiredText(row, "uom"),
+                    null, null, null, null, null});
+        });
+        return new ArrayList<>(bases.values());
+    }
+
+    private static String skuKey(String warehouseId, String projectMaterialSku) {
+        return warehouseId + "|" + projectMaterialSku;
+    }
+
+    private static String nullableSkuKey(String warehouseId, String projectMaterialSku) {
+        return projectMaterialSku == null || projectMaterialSku.trim().isEmpty()
+                ? null : skuKey(warehouseId, projectMaterialSku);
+    }
+
+    private static boolean isBlank(Object value) {
+        return value == null || value.toString().trim().isEmpty();
+    }
+
     private int importInventory(Workbook workbook) {
         Table table = Table.open(workbook, "现存量快照", "material_code");
         Map<String, String> warehouseIds = warehouseIdsByName();
         List<Object[]> rows = new ArrayList<>();
         table.forEach(row -> rows.add(new Object[]{
-                requiredWarehouseId(warehouseIds, table.requiredText(row, "warehouse_name")),
-                table.requiredText(row, "material_code"), table.requiredText(row, "project_no"), table.sqlDate(row, "stock_date"),
-                table.requiredText(row, "warehouse_name"), table.requiredText(row, "material_name"), table.text(row, "customer_item"),
-                table.requiredText(row, "project_material_sku"), table.text(row, "product_index_no"), table.text(row, "glove_size"),
-                table.text(row, "color_code"), table.requiredText(row, "main_uom"), table.text(row, "specification"), table.text(row, "model"),
+                skuKey(requiredWarehouseId(warehouseIds, table.requiredText(row, "warehouse_name")), table.requiredText(row, "project_material_sku")),
+                table.sqlDate(row, "stock_date"),
                 table.decimal(row, "on_hand_main_qty"), table.decimal(row, "reserved_main_qty"), table.decimal(row, "frozen_main_qty"),
                 table.decimal(row, "vendor_owned_on_hand_main_qty")
         }));
@@ -179,11 +235,7 @@ public class WarehouseImportService {
         Table table = Table.open(workbook, "运营_SKU日指标", "biz_date");
         List<Object[]> rows = new ArrayList<>();
         table.forEach(row -> rows.add(new Object[]{
-                table.sqlDate(row, "biz_date"), table.requiredText(row, "warehouse_id"), table.requiredText(row, "warehouse_name"),
-                table.requiredText(row, "warehouse_type"), table.text(row, "warehouse_role"), table.requiredText(row, "project_no"),
-                table.requiredText(row, "project_name"), table.requiredText(row, "material_code"), table.requiredText(row, "material_name"),
-                table.requiredText(row, "project_material_sku"), table.requiredText(row, "warehouse_sku_key"), table.requiredText(row, "material_category"),
-                table.text(row, "color"), table.text(row, "model"), table.requiredText(row, "uom"), table.text(row, "packaging_level"),
+                table.sqlDate(row, "biz_date"), table.requiredText(row, "warehouse_sku_key"),
                 table.requiredText(row, "area_id"), table.requiredText(row, "area_name"), table.integer(row, "inbound_order_count"),
                 table.integer(row, "inbound_line_count"), table.decimal(row, "inbound_qty"), table.integer(row, "outbound_order_count"),
                 table.integer(row, "outbound_line_count"), table.decimal(row, "outbound_qty"), table.integer(row, "picking_task_count"),
@@ -204,8 +256,8 @@ public class WarehouseImportService {
     }
 
     private Object[] warehouseDailyRow(Table table, Row row) {
-        return new Object[]{table.sqlDate(row, "biz_date"), table.requiredText(row, "warehouse_id"), table.requiredText(row, "warehouse_name"),
-                table.requiredText(row, "warehouse_type"), table.integer(row, "inbound_order_count"), table.integer(row, "outbound_order_count"),
+        return new Object[]{table.sqlDate(row, "biz_date"), table.requiredText(row, "warehouse_id"),
+                table.integer(row, "inbound_order_count"), table.integer(row, "outbound_order_count"),
                 table.decimal(row, "raw_inbound_ton"), table.decimal(row, "raw_outbound_ton"), table.integer(row, "finished_inbound_carton"),
                 table.integer(row, "finished_outbound_carton"), table.integer(row, "packaging_inbound_piece"), table.integer(row, "packaging_outbound_piece"),
                 table.integer(row, "picking_task_count"), table.integer(row, "forklift_task_count"), table.decimal(row, "inventory_accuracy"),
@@ -218,8 +270,7 @@ public class WarehouseImportService {
         Table table = Table.open(workbook, "运营_库区状态", "snapshot_date");
         List<Object[]> rows = new ArrayList<>();
         table.forEach(row -> rows.add(new Object[]{table.sqlDate(row, "snapshot_date"), table.requiredText(row, "warehouse_id"),
-                table.requiredText(row, "warehouse_name"), table.requiredText(row, "warehouse_type"), table.requiredText(row, "area_id"),
-                table.requiredText(row, "area_name"), table.integer(row, "capacity_locations"), table.integer(row, "occupied_locations"),
+                table.requiredText(row, "area_id"), table.requiredText(row, "area_name"), table.integer(row, "capacity_locations"), table.integer(row, "occupied_locations"),
                 table.integer(row, "available_locations"), table.decimal(row, "occupancy_rate"), table.integer(row, "material_type_count"),
                 table.integer(row, "abnormal_location_count"), table.decimal(row, "frozen_qty"), table.text(row, "area_owner"), table.requiredText(row, "status")}));
         persistenceService.insertAreaSnapshots(rows);
@@ -230,10 +281,9 @@ public class WarehouseImportService {
         Table table = Table.open(workbook, "运营_异常事件", "event_id");
         List<Object[]> rows = new ArrayList<>();
         table.forEach(row -> rows.add(new Object[]{table.requiredText(row, "event_id"), table.sqlTimestamp(row, "event_time"),
-                table.requiredText(row, "event_type"), table.requiredText(row, "warehouse_id"), table.requiredText(row, "warehouse_name"),
-                table.requiredText(row, "warehouse_type"), table.text(row, "project_no"), table.text(row, "project_name"), table.text(row, "material_code"),
-                table.text(row, "material_name"), table.text(row, "project_material_sku"), table.text(row, "material_category"), table.text(row, "color"),
-                table.text(row, "model"), table.text(row, "uom"), table.text(row, "packaging_level"), table.text(row, "area_id"), table.text(row, "area_name"),
+                table.requiredText(row, "event_type"), table.requiredText(row, "warehouse_id"),
+                nullableSkuKey(table.requiredText(row, "warehouse_id"), table.text(row, "project_material_sku")),
+                table.text(row, "area_id"), table.text(row, "area_name"),
                 table.requiredText(row, "severity"), table.requiredText(row, "handling_status"), table.text(row, "owner"), table.nullableInteger(row, "response_minutes"),
                 table.nullableDecimal(row, "sla_hours"), table.nullableTimestamp(row, "deadline_time"), table.nullableTimestamp(row, "close_time"),
                 table.nullableInteger(row, "duration_minutes"), table.yesNo(row, "is_sla_breached"), table.text(row, "root_cause"),
@@ -281,12 +331,8 @@ public class WarehouseImportService {
         List<Object[]> rows = new ArrayList<>();
         table.forEach(row -> rows.add(new Object[]{
                 table.sqlDate(row, "snapshot_date"), table.requiredText(row, "age_batch_id"),
-                table.requiredText(row, "warehouse_id"), table.requiredText(row, "warehouse_name"),
-                table.requiredText(row, "warehouse_type"), table.requiredText(row, "project_no"),
-                table.requiredText(row, "project_name"), table.requiredText(row, "material_code"),
-                table.requiredText(row, "material_name"), table.requiredText(row, "project_material_sku"),
-                table.requiredText(row, "material_category"), table.text(row, "color"), table.text(row, "model"),
-                table.requiredText(row, "uom"), table.requiredText(row, "batch_no"),
+                skuKey(table.requiredText(row, "warehouse_id"), table.requiredText(row, "project_material_sku")),
+                table.requiredText(row, "batch_no"),
                 table.sqlDate(row, "receipt_date"), table.integer(row, "age_days"),
                 table.requiredText(row, "age_bucket"), table.decimal(row, "batch_on_hand_qty"),
                 table.decimal(row, "batch_reserved_qty"), table.decimal(row, "batch_frozen_qty"),
@@ -307,12 +353,8 @@ public class WarehouseImportService {
         Table table = Table.open(workbook, AGE_SKU_SHEET, "project_material_sku");
         List<Object[]> rows = new ArrayList<>();
         table.forEach(row -> rows.add(new Object[]{
-                table.sqlDate(row, "snapshot_date"), table.requiredText(row, "warehouse_id"),
-                table.requiredText(row, "warehouse_name"), table.requiredText(row, "warehouse_type"),
-                table.requiredText(row, "project_no"), table.requiredText(row, "project_name"),
-                table.requiredText(row, "material_code"), table.requiredText(row, "material_name"),
-                table.requiredText(row, "project_material_sku"), table.requiredText(row, "material_category"),
-                table.text(row, "color"), table.text(row, "model"), table.requiredText(row, "uom"),
+                table.sqlDate(row, "snapshot_date"),
+                skuKey(table.requiredText(row, "warehouse_id"), table.requiredText(row, "project_material_sku")),
                 table.integer(row, "batch_count"), table.decimal(row, "on_hand_qty"),
                 table.decimal(row, "available_qty"), table.nullableDecimal(row, "inventory_amount"),
                 table.nullableDecimal(row, "weighted_avg_age_days"), table.integer(row, "max_age_days"),
@@ -373,8 +415,6 @@ public class WarehouseImportService {
             WarehouseEntity warehouse = persistenceService.warehouse(warehouseId);
             if (warehouse == null) throw new IllegalArgumentException("?????" + warehouseId);
             return new Object[]{Date.valueOf(parseDate(value(values, "biz_date", null))), warehouseId,
-                    value(values, "warehouse_name", warehouse.getWarehouseName()),
-                    value(values, "warehouse_type", warehouse.getWarehouseType()),
                     integer(values, "inbound_order_count"), integer(values, "outbound_order_count"), decimal(values, "raw_inbound_ton"),
                     decimal(values, "raw_outbound_ton"), integer(values, "finished_inbound_carton"), integer(values, "finished_outbound_carton"),
                     integer(values, "packaging_inbound_piece"), integer(values, "packaging_outbound_piece"), integer(values, "picking_task_count"),

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.intco.warehouse.mapper.ExceptionEventMapper">
+  <select id="selectJoined" resultType="com.intco.warehouse.entity.ExceptionEventEntity">
+    SELECT f.*, w.warehouse_name, w.warehouse_type, b.project_no, b.project_name, b.material_code,
+           b.material_name, b.project_material_sku, b.material_category, b.color, b.model, b.uom, b.packaging_level
+    FROM exception_event_fact f
+    JOIN warehouse w ON w.warehouse_id = f.warehouse_id
+    LEFT JOIN warehouse_sku_base b ON b.warehouse_sku_key = f.warehouse_sku_key
+    <where>
+      <if test="warehouseId != null">f.warehouse_id = #{warehouseId}</if>
+      <if test="areaId != null">AND f.area_id = #{areaId}</if>
+    </where>
+    ORDER BY f.event_time DESC
+  </select>
+</mapper>

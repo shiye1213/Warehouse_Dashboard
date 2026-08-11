@@ -20,7 +20,7 @@
 Vue 3 + Vue Router + ECharts
             │ /api
             ▼
-Spring Boot 2.7 + JDBC + Apache POI + Commons CSV
+Spring Boot 2.7 + MyBatis-Plus + Apache POI + Commons CSV
             │
             ▼
 MySQL 8（空库由 2026 年 7 月模拟数据自动初始化）
@@ -30,13 +30,21 @@ MySQL 8（空库由 2026 年 7 月模拟数据自动初始化）
 
 ## 本地运行
 
-首次运行先启动 MySQL 8。已安装 Docker Desktop 时可在项目根目录执行：
+本项目直接使用 Windows 本机 MySQL 8，不依赖 Docker。管理员 PowerShell 中启动数据库服务：
 
 ```powershell
-docker compose up -d mysql
+Start-Service MySQL80
+Get-Service MySQL80
 ```
 
-等待 MySQL 健康检查通过后，再启动前后端：
+首次使用时，以 MySQL 管理员账号执行初始化脚本：
+
+```powershell
+& 'C:\Program Files\MySQL\MySQL Server 8.0\bin\mysql.exe' -u root -p `
+  -e "source scripts/init-local-mysql.sql"
+```
+
+然后启动前后端：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\run.ps1
@@ -44,7 +52,7 @@ powershell -ExecutionPolicy Bypass -File .\run.ps1
 
 打开 `http://127.0.0.1:5173/`。脚本会在后台启动 Spring Boot，并在当前窗口运行 Vue 开发服务器；结束前端进程时会一并结束后端。
 
-如使用已有 MySQL，可通过环境变量覆盖连接：
+默认连接本机 `warehouse_dashboard`。如账号或端口不同，可通过环境变量覆盖：
 
 ```powershell
 $env:WAREHOUSE_DB_URL = 'jdbc:mysql://127.0.0.1:3306/warehouse_dashboard?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false'
@@ -78,9 +86,9 @@ mvn package
 
 ## 数据导入
 
-完整 `.xlsx` 导入支持以下 8 个数据工作表：
+完整 `.xlsx` 导入支持以下 11 个数据工作表：
 
-`仓库主数据`、`现存量快照`、`运营_SKU日指标`、`运营_仓库每日指标`、`运营_库区状态`、`运营_异常事件`、`项目_BOM关系`、`运营_KPI目标`。
+`仓库主数据`、`现存量快照`、`运营_SKU日指标`、`运营_仓库每日指标`、`运营_库区状态`、`运营_异常事件`、`项目_BOM关系`、`运营_KPI目标`、`库龄规则`、`库龄批次明细`、`库龄SKU汇总`。
 
 完整导入会先校验全部工作表，再在单个数据库事务中替换数据。UTF-8 `.csv` 用于轻量更新 `运营_仓库每日指标`，以 `biz_date + warehouse_id` 为合并主键。建议从“数据中心”下载最新标准模板。
 

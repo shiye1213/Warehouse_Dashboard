@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.intco.warehouse.mapper.WarehouseDailyMetricMapper">
+  <select id="selectJoined" resultType="com.intco.warehouse.entity.WarehouseDailyMetricEntity">
+    SELECT f.*, w.warehouse_name, w.warehouse_type
+    FROM warehouse_daily_metric_fact f JOIN warehouse w ON w.warehouse_id = f.warehouse_id
+    <where><if test="warehouseId != null">f.warehouse_id = #{warehouseId}</if></where>
+    ORDER BY f.biz_date, f.warehouse_id
+  </select>
+</mapper>

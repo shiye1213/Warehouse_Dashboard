@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class WarehouseDataService {
     private final WarehouseMapper warehouseMapper;
+    private final WarehouseSkuBaseMapper warehouseSkuBaseMapper;
     private final InventorySnapshotMapper inventorySnapshotMapper;
     private final SkuDailyMetricMapper skuDailyMetricMapper;
     private final WarehouseDailyMetricMapper warehouseDailyMetricMapper;
@@ -41,6 +42,7 @@ public class WarehouseDataService {
 
     public WarehouseDataService(
             WarehouseMapper warehouseMapper,
+            WarehouseSkuBaseMapper warehouseSkuBaseMapper,
             InventorySnapshotMapper inventorySnapshotMapper,
             SkuDailyMetricMapper skuDailyMetricMapper,
             WarehouseDailyMetricMapper warehouseDailyMetricMapper,
@@ -54,6 +56,7 @@ public class WarehouseDataService {
             DataImportJobMapper dataImportJobMapper,
             ConcurrentQueryExecutor queryExecutor) {
         this.warehouseMapper = warehouseMapper;
+        this.warehouseSkuBaseMapper = warehouseSkuBaseMapper;
         this.inventorySnapshotMapper = inventorySnapshotMapper;
         this.skuDailyMetricMapper = skuDailyMetricMapper;
         this.warehouseDailyMetricMapper = warehouseDailyMetricMapper;
@@ -120,14 +123,9 @@ public class WarehouseDataService {
                 inventoryAgeRuleMapper.selectList(Wrappers.lambdaQuery(InventoryAgeRuleEntity.class)
                         .orderByAsc(InventoryAgeRuleEntity::getRuleType, InventoryAgeRuleEntity::getRuleName)));
         CompletableFuture<List<InventoryAgeBatchEntity>> batchQuery = queryExecutor.submit(() ->
-                inventoryAgeBatchMapper.selectList(Wrappers.lambdaQuery(InventoryAgeBatchEntity.class)
-                        .orderByDesc(InventoryAgeBatchEntity::getSnapshotDate)
-                        .orderByAsc(InventoryAgeBatchEntity::getWarehouseId, InventoryAgeBatchEntity::getAgeBatchId)));
+                inventoryAgeBatchMapper.selectJoined());
         CompletableFuture<List<InventoryAgeSkuEntity>> skuQuery = queryExecutor.submit(() ->
-                inventoryAgeSkuMapper.selectList(Wrappers.lambdaQuery(InventoryAgeSkuEntity.class)
-                        .orderByDesc(InventoryAgeSkuEntity::getSnapshotDate)
-                        .orderByAsc(InventoryAgeSkuEntity::getWarehouseId, InventoryAgeSkuEntity::getProjectNo,
-                                InventoryAgeSkuEntity::getMaterialCode)));
+                inventoryAgeSkuMapper.selectJoined());
         queryExecutor.awaitAll(ruleQuery, batchQuery, skuQuery);
 
         List<InventoryAgeBatchEntity> batchHistory = queryExecutor.await(batchQuery);
@@ -187,7 +185,7 @@ public class WarehouseDataService {
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("meta", mapOf("snapshotDate", latestBatchDate != null ? latestBatchDate : latestSkuDate,
-                "source", "MySQL · inventory_age_batch / inventory_age_sku",
+                "source", "MySQL · inventory_age_batch_fact / inventory_age_sku_fact",
                 "batchCount", batches.size(), "skuCount", skus.size(), "stagnantThresholdDays", 180,
                 "severeThresholdDays", 365, "noMovementThresholdDays", 90));
         result.put("rules", rules);
@@ -284,6 +282,7 @@ public class WarehouseDataService {
 
     public Map<String, Object> dataStatus() {
         CompletableFuture<Long> warehouses = queryExecutor.submit(() -> warehouseMapper.selectCount(null));
+        CompletableFuture<Long> warehouseSkuBases = queryExecutor.submit(() -> warehouseSkuBaseMapper.selectCount(null));
         CompletableFuture<Long> inventorySnapshots = queryExecutor.submit(() -> inventorySnapshotMapper.selectCount(null));
         CompletableFuture<Long> skuDailyMetrics = queryExecutor.submit(() -> skuDailyMetricMapper.selectCount(null));
         CompletableFuture<Long> warehouseDailyMetrics = queryExecutor.submit(() -> warehouseDailyMetricMapper.selectCount(null));
@@ -298,12 +297,13 @@ public class WarehouseDataService {
         CompletableFuture<List<WarehouseDailyMetric>> dailyQuery = queryExecutor.submit(() -> loadWarehouseDaily(null));
         CompletableFuture<List<Zone>> zoneQuery = queryExecutor.submit(() -> loadLatestZones(null));
         CompletableFuture<List<Alert>> alertQuery = queryExecutor.submit(() -> loadAlerts(null));
-        queryExecutor.awaitAll(warehouses, inventorySnapshots, skuDailyMetrics, warehouseDailyMetrics,
+        queryExecutor.awaitAll(warehouses, warehouseSkuBases, inventorySnapshots, skuDailyMetrics, warehouseDailyMetrics,
                 areaSnapshots, exceptionEvents, bomRelations, kpiTargets, inventoryAgeRules,
                 inventoryAgeBatches, inventoryAgeSkus, importJobs, dailyQuery, zoneQuery, alertQuery);
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("warehouses", queryExecutor.await(warehouses));
+        result.put("warehouseSkuBases", queryExecutor.await(warehouseSkuBases));
         result.put("inventorySnapshots", queryExecutor.await(inventorySnapshots));
         result.put("skuDailyMetrics", queryExecutor.await(skuDailyMetrics));
         result.put("warehouseDailyMetrics", queryExecutor.await(warehouseDailyMetrics));
@@ -321,11 +321,7 @@ public class WarehouseDataService {
     }
 
     private List<Map<String, Object>> loadLatestSkuOperations(String warehouseId) {
-        List<SkuDailyMetricEntity> rows = skuDailyMetricMapper.selectList(
-                Wrappers.lambdaQuery(SkuDailyMetricEntity.class)
-                        .eq(SkuDailyMetricEntity::getWarehouseId, warehouseId)
-                        .orderByDesc(SkuDailyMetricEntity::getBizDate)
-                        .orderByAsc(SkuDailyMetricEntity::getProjectNo, SkuDailyMetricEntity::getMaterialCode));
+        List<SkuDailyMetricEntity> rows = skuDailyMetricMapper.selectJoined(warehouseId);
         if (rows.isEmpty()) return new ArrayList<>();
         LocalDate latestDate = rows.get(0).getBizDate();
         return rows.stream()
@@ -353,8 +349,7 @@ public class WarehouseDataService {
                 .collect(Collectors.toList());
     }
     private List<WarehouseDailyMetric> loadWarehouseDaily(String warehouseId) {
-        return warehouseDailyMetricMapper.selectList(Wrappers.lambdaQuery(WarehouseDailyMetricEntity.class)
-                        .eq(warehouseId != null, WarehouseDailyMetricEntity::getWarehouseId, warehouseId).orderByAsc(WarehouseDailyMetricEntity::getBizDate, WarehouseDailyMetricEntity::getWarehouseId)).stream()
+        return warehouseDailyMetricMapper.selectJoined(warehouseId).stream()
                 .map(this::mapWarehouseDaily).collect(Collectors.toList());
 
     }
@@ -414,9 +409,7 @@ public class WarehouseDataService {
     }
 
     private List<Zone> loadLatestZones(String warehouseId) {
-        List<WarehouseAreaSnapshotEntity> snapshots = warehouseAreaSnapshotMapper.selectList(Wrappers.lambdaQuery(WarehouseAreaSnapshotEntity.class)
-                .eq(warehouseId != null, WarehouseAreaSnapshotEntity::getWarehouseId, warehouseId)
-                .orderByAsc(WarehouseAreaSnapshotEntity::getWarehouseId, WarehouseAreaSnapshotEntity::getAreaId));
+        List<WarehouseAreaSnapshotEntity> snapshots = warehouseAreaSnapshotMapper.selectJoined(warehouseId);
         Map<String, LocalDate> latest = new LinkedHashMap<>();
         for (WarehouseAreaSnapshotEntity snapshot : snapshots) latest.merge(snapshot.getWarehouseId(), snapshot.getSnapshotDate(), (a, b) -> a.isAfter(b) ? a : b);
         return snapshots.stream().filter(row -> row.getSnapshotDate().equals(latest.get(row.getWarehouseId())))
@@ -442,14 +435,12 @@ public class WarehouseDataService {
     }
 
     private List<Alert> loadAlerts(String warehouseId) {
-        return exceptionEventMapper.selectList(Wrappers.lambdaQuery(ExceptionEventEntity.class)
-                        .eq(warehouseId != null, ExceptionEventEntity::getWarehouseId, warehouseId).orderByDesc(ExceptionEventEntity::getEventTime)).stream()
+        return exceptionEventMapper.selectJoined(warehouseId, null).stream()
                 .map(this::mapAlert).collect(Collectors.toList());
     }
 
     private List<Alert> loadAlertsByArea(String areaId) {
-        return exceptionEventMapper.selectList(Wrappers.lambdaQuery(ExceptionEventEntity.class)
-                        .eq(ExceptionEventEntity::getAreaId, areaId).orderByDesc(ExceptionEventEntity::getEventTime)).stream()
+        return exceptionEventMapper.selectJoined(null, areaId).stream()
                 .map(this::mapAlert).collect(Collectors.toList());
     }
 
@@ -515,10 +506,7 @@ public class WarehouseDataService {
     }
 
     private List<InventorySnapshotEntity> loadInventoryRows(String warehouseId) {
-        List<InventorySnapshotEntity> rows = inventorySnapshotMapper.selectList(Wrappers.lambdaQuery(InventorySnapshotEntity.class)
-                .eq(InventorySnapshotEntity::getWarehouseId, warehouseId)
-                .orderByDesc(InventorySnapshotEntity::getStockDate)
-                .orderByAsc(InventorySnapshotEntity::getProjectNo, InventorySnapshotEntity::getMaterialCode));
+        List<InventorySnapshotEntity> rows = inventorySnapshotMapper.selectJoined(warehouseId);
         if (rows.isEmpty()) return rows;
         LocalDate latestDate = rows.get(0).getStockDate();
         return rows.stream().filter(row -> latestDate.equals(row.getStockDate())).collect(Collectors.toList());
@@ -551,8 +539,7 @@ public class WarehouseDataService {
     }
 
     private List<Map<String, Object>> loadDetailedAlerts(String warehouseId) {
-        return exceptionEventMapper.selectList(Wrappers.lambdaQuery(ExceptionEventEntity.class)
-                        .eq(ExceptionEventEntity::getWarehouseId, warehouseId).orderByDesc(ExceptionEventEntity::getEventTime)).stream()
+        return exceptionEventMapper.selectJoined(warehouseId, null).stream()
                 .map(source -> {
                     java.time.LocalDateTime occurred = source.getEventTime();
                     java.time.LocalDateTime closed = source.getCloseTime();

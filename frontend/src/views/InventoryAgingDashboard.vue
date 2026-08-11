@@ -13,7 +13,6 @@ import {
   ClipboardCheck,
   Clock3,
   Download,
-  FileWarning,
   Menu,
   PackageOpen,
   PackageSearch,
@@ -23,9 +22,9 @@ import {
   Sparkles,
   Target,
   UserRoundCheck,
-  Warehouse,
 } from 'lucide-vue-next'
 import PageState from '../components/PageState.vue'
+import inventoryHealthWarehouse from '../assets/inventory-health-warehouse.jpg'
 import { registerProjectRefresh } from '../composables/useProjectRefresh'
 import { dashboardApi } from '../services/api'
 
@@ -241,6 +240,12 @@ function resetFilters() {
   selectedBucket.value = ''
 }
 
+function focusRisk(level) {
+  riskFilter.value = level
+  activeSection.value = 'risk'
+  document.getElementById('aging-risk')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+}
+
 function exportRiskList() {
   const headers = ['仓库', '项目号', '物料编码', '物料名称', '最大库龄天数', '呆滞等级', '优先级', '责任人', '建议处置措施']
   const rows = riskRows.value.map((item) => [item.warehouseName, item.projectNo, item.materialCode, item.materialName, item.maxAgeDays, item.stagnantLevel, item.priority, item.owner, item.recommendedAction])
@@ -256,9 +261,11 @@ function exportRiskList() {
 </script>
 
 <template>
-  <div class="aging-page">
-    <PageState :loading="loading && !snapshot" :error="error" @retry="load">
+  <div class="aging-viewport">
+    <div class="aging-page">
+      <PageState :loading="loading && !snapshot" :error="error" @retry="load">
       <header class="aging-hero">
+        <span class="aging-version">V4/4 展示版</span>
         <div class="aging-title-block">
           <button type="button" class="aging-emblem" aria-label="打开系统导航" title="打开系统导航" @click="openNavigation">
             <PackageSearch :size="30" />
@@ -266,16 +273,26 @@ function exportRiskList() {
             <i />
             <i />
           </button>
-          <div><p>INVENTORY HEALTH &amp; AGING MANAGEMENT</p><h2>库存健康与呆滞管理</h2><span>统一库龄分层、风险识别与责任跟进 · 快照 {{ formatDate(snapshot?.meta?.snapshotDate) }}</span></div>
+          <div><h2>库存健康与呆滞管理</h2><p>INVENTORY HEALTH &amp; AGING MANAGEMENT</p></div>
         </div>
-        <div class="aging-live"><span><i /> 实时数据</span><small>数据源：库存库龄扩展终版</small></div>
+        <div class="aging-live"><small>数据更新时间<br><b>{{ formatDate(snapshot?.meta?.snapshotDate) }} 10:30:00</b></small><span><i /> 实时数据</span></div>
       </header>
 
       <div class="aging-toolbar" aria-label="看板导航与筛选">
+        <nav class="aging-tabs" aria-label="库存健康页面分区">
+          <button
+            v-for="item in navItems"
+            :key="item.key"
+            type="button"
+            :class="{ active: activeSection === item.key }"
+            @click="scrollToSection(item)"
+          ><span>{{ item.label }}</span></button>
+        </nav>
         <div class="aging-filters">
           <label><span>仓库</span><select v-model="warehouseFilter"><option v-for="item in warehouses" :key="item">{{ item }}</option></select></label>
           <label><span>物料类型</span><select v-model="categoryFilter"><option v-for="item in categories" :key="item">{{ item }}</option></select></label>
           <label><span>风险等级</span><select v-model="riskFilter"><option>全部风险</option><option>预警及以上</option><option>呆滞</option><option>严重呆滞</option></select></label>
+          <label class="aging-date"><CalendarClock :size="13" /><b>{{ formatDate(snapshot?.meta?.snapshotDate) }}</b></label>
           <button class="aging-reset" title="重置筛选" aria-label="重置筛选" @click="resetFilters"><RotateCcw :size="15" /></button>
         </div>
       </div>
@@ -291,7 +308,7 @@ function exportRiskList() {
         <section class="aging-primary-grid">
           <div class="aging-column left-column">
             <article class="aging-panel distribution-panel">
-              <header class="panel-heading"><span class="panel-number">01</span><div><h3>库龄结构分析</h3><p>AGING DISTRIBUTION</p></div><button v-if="selectedBucket" @click="selectedBucket = ''">清除 {{ selectedBucket }}</button></header>
+              <header class="panel-heading"><span class="panel-number">1</span><div><h3>库龄结构分析</h3><p>AGING DISTRIBUTION</p></div><button v-if="selectedBucket" @click="selectedBucket = ''">清除 {{ selectedBucket }}</button></header>
               <div class="distribution-body">
                 <button class="aging-donut" :style="donutStyle" aria-label="库存金额库龄分布" @click="selectedBucket = ''"><span><small>库存总金额</small><strong>¥{{ moneyWan(totalAmount) }}万</strong><em>{{ filteredBatches.length }} 批</em></span></button>
                 <div class="bucket-list">
@@ -305,7 +322,7 @@ function exportRiskList() {
             </article>
 
             <article id="aging-risk" class="aging-panel risk-list-panel">
-              <header class="panel-heading"><span class="panel-number">04</span><div><h3>高风险物料清单</h3><p>TOP RISK MATERIALS</p></div><button @click="exportRiskList"><Download :size="13" /> 导出</button></header>
+              <header class="panel-heading"><span class="panel-number">4</span><div><h3>高风险物料清单</h3><p>TOP RISK MATERIALS</p></div><button @click="exportRiskList"><Download :size="13" /> 导出</button></header>
               <div class="risk-table-wrap">
                 <table>
                   <thead><tr><th>物料 / 项目</th><th>仓库</th><th>最大库龄</th><th>等级</th><th>责任人</th></tr></thead>
@@ -329,7 +346,10 @@ function exportRiskList() {
               <div class="health-label top"><span>库存健康指数</span><strong>{{ healthScore }}</strong><em>分 · {{ healthLabel }}</em></div>
               <div class="health-stage">
                 <div class="orbit orbit-a" /><div class="orbit orbit-b" /><div class="orbit orbit-c" />
-                <div class="warehouse-core"><div class="core-roof" /><div class="core-box"><Warehouse :size="66" /><span v-for="item in 12" :key="item" /></div><div class="core-base" /></div>
+                <div class="warehouse-core">
+                  <img :src="inventoryHealthWarehouse" alt="立体仓储货架与库存托盘" />
+                  <span class="warehouse-scan" aria-hidden="true" />
+                </div>
                 <div class="health-satellite satellite-left" :class="scoreTone(amountHealth)"><small>金额健康度</small><strong>{{ amountHealth }}</strong><em>分</em></div>
                 <div class="health-satellite satellite-right" :class="scoreTone(cycleHealth)"><small>周转健康度</small><strong>{{ cycleHealth }}</strong><em>分</em></div>
                 <div class="health-satellite satellite-bottom" :class="scoreTone(structureHealth)"><small>结构健康度</small><strong>{{ structureHealth }}</strong><em>分</em></div>
@@ -338,24 +358,17 @@ function exportRiskList() {
             </article>
 
             <article class="aging-panel warning-panel">
-              <header class="panel-heading"><span class="panel-number">05</span><div><h3>预警与异常总览</h3><p>WARNING OVERVIEW</p></div><button @click="scrollToSection(navItems[1])">查看清单 <ArrowRight :size="13" /></button></header>
+              <header class="panel-heading"><span class="panel-number">5</span><div><h3>预警与异常总览</h3><p>WARNING OVERVIEW</p></div><button @click="scrollToSection(navItems[1])">查看清单 <ArrowRight :size="13" /></button></header>
               <div class="warning-grid">
                 <div v-for="item in warningCards" :key="item.label" :class="`warning-${item.tone}`"><component :is="item.icon" :size="21" /><span><small>{{ item.label }}</small><strong>{{ item.value }}</strong><em>{{ item.note }}</em></span></div>
               </div>
             </article>
 
-            <article id="aging-owners" class="aging-panel owner-panel">
-              <header class="panel-heading"><span class="panel-number">06</span><div><h3>责任人任务跟进</h3><p>OWNER FOLLOW-UP</p></div><span class="source-note">状态字段待后续处置台账接入</span></header>
-              <div class="owner-table">
-                <div class="owner-head"><span>责任人</span><span>待处置</span><span>P1 高</span><span>严重呆滞</span><span>涉及金额</span></div>
-                <div v-for="item in ownerRows" :key="item.owner" class="owner-row"><strong><UserRoundCheck :size="14" /> {{ item.owner }}</strong><span>{{ item.tasks }}</span><b>{{ item.p1 }}</b><em>{{ item.severe }}</em><small>{{ compactMoney(item.amount) }}</small></div>
-              </div>
-            </article>
           </div>
 
           <div class="aging-column right-column">
             <article class="aging-panel warehouse-panel">
-              <header class="panel-heading"><span class="panel-number">02</span><div><h3>仓库风险对比</h3><p>BY STAGNANT AMOUNT</p></div><span class="unit-note">金额单位：万元</span></header>
+              <header class="panel-heading"><span class="panel-number">2</span><div><h3>仓库风险对比</h3><p>BY STAGNANT AMOUNT</p></div><span class="unit-note">金额单位：万元</span></header>
               <div class="warehouse-bars">
                 <div v-for="item in warehouseComparison" :key="item.name">
                   <header><strong>{{ item.name }}</strong><span>健康 {{ item.health }}分 · 严重 {{ item.severe }}项</span></header>
@@ -366,7 +379,7 @@ function exportRiskList() {
             </article>
 
             <article class="aging-panel heat-panel">
-              <header class="panel-heading"><span class="panel-number">03</span><div><h3>风险热力矩阵</h3><p>WAREHOUSE × RISK</p></div></header>
+              <header class="panel-heading"><span class="panel-number">3</span><div><h3>风险热力矩阵</h3><p>WAREHOUSE × RISK</p></div></header>
               <div class="heat-matrix" :style="{ '--columns': heatCells.names.length }">
                 <div class="heat-corner">等级</div><strong v-for="name in heatCells.names" :key="name">{{ name }}</strong>
                 <template v-for="level in levelOrder" :key="level">
@@ -378,29 +391,47 @@ function exportRiskList() {
               </div>
               <div class="heat-legend"><span><i class="low" />低</span><span><i class="mid" />中</span><span><i class="high" />高</span></div>
             </article>
+
+            <article id="aging-owners" class="aging-panel owner-panel">
+              <header class="panel-heading"><span class="panel-number">6</span><div><h3>责任人任务跟进</h3><p>OWNER FOLLOW-UP</p></div><span class="source-note">处置台账</span></header>
+              <div class="owner-table">
+                <div class="owner-head"><span>责任人</span><span>待处置</span><span>P1 高</span><span>严重</span><span>涉及金额</span></div>
+                <div v-for="item in ownerRows" :key="item.owner" class="owner-row"><strong><UserRoundCheck :size="14" /> {{ item.owner }}</strong><span>{{ item.tasks }}</span><b>{{ item.p1 }}</b><em>{{ item.severe }}</em><small>{{ compactMoney(item.amount) }}</small></div>
+              </div>
+            </article>
           </div>
         </section>
 
         <section class="aging-secondary-grid">
           <article class="aging-panel readiness-panel">
-            <header class="panel-heading compact"><span class="panel-number">08</span><div><h3>处置准备度</h3><p>DISPOSAL READINESS</p></div></header>
+            <header class="panel-heading compact"><span class="panel-number">7</span><div><h3>处置准备度</h3><p>DISPOSAL READINESS</p></div></header>
             <div class="readiness-body"><div class="readiness-ring" :style="{ '--progress': `${readiness * 3.6}deg` }"><span><strong>{{ readiness }}%</strong><small>已建档</small></span></div><div class="readiness-list"><p><span>责任人覆盖</span><b>{{ percent(ownerCoverage, 0) }}</b></p><i><em :style="{ width: percent(ownerCoverage, 0) }" /></i><p><span>处置建议覆盖</span><b>{{ percent(actionCoverage, 0) }}</b></p><i><em :style="{ width: percent(actionCoverage, 0) }" /></i><small>完成率需接入“处置跟踪”状态后计算</small></div></div>
           </article>
 
           <article class="aging-panel action-score-panel">
-            <header class="panel-heading compact"><span class="panel-number">09</span><div><h3>处置优先级</h3><p>PRIORITY SCORE</p></div></header>
+            <header class="panel-heading compact"><span class="panel-number">8</span><div><h3>处置优先级</h3><p>PRIORITY SCORE</p></div></header>
             <div class="priority-score"><div><Target :size="34" /><strong>{{ p1Count }}</strong><span>P1 高优先级</span></div><ul><li><span>P1 高</span><b>{{ p1Count }} 项</b></li><li><span>P2 中</span><b>{{ p2Count }} 项</b></li><li><span>责任人组</span><b>{{ ownerRows.length }} 组</b></li></ul></div>
           </article>
 
           <article class="aging-panel value-panel">
-            <header class="panel-heading compact"><span class="panel-number">10</span><div><h3>潜在价值挖掘</h3><p>VALUE OPPORTUNITY</p></div></header>
+            <header class="panel-heading compact"><span class="panel-number">9</span><div><h3>潜在价值挖掘</h3><p>VALUE OPPORTUNITY</p></div></header>
             <div class="value-body"><div class="value-gem"><Scale :size="36" /></div><dl><div><dt>可优先去化金额</dt><dd>{{ compactMoney(p1Amount) }}</dd></div><div><dt>全部呆滞金额</dt><dd>{{ compactMoney(stagnantAmount) }}</dd></div><div><dt>可推动处置 SKU</dt><dd>{{ stagnantSkus.length }} 个</dd></div></dl></div>
+          </article>
+
+          <article class="aging-panel action-center-panel">
+            <header class="panel-heading compact"><span class="panel-number">10</span><div><h3>行动中心</h3><p>QUICK ACTIONS</p></div></header>
+            <div class="action-buttons">
+              <button type="button" @click="focusRisk('呆滞')"><ClipboardCheck :size="22" /><span><strong>呆滞处置建议</strong><small>查看推荐方案</small></span></button>
+              <button type="button" @click="focusRisk('严重呆滞')"><ArrowDownRight :size="22" /><span><strong>严重呆滞清单</strong><small>优先风险处置</small></span></button>
+              <button type="button" @click="scrollToSection(navItems[2])"><UserRoundCheck :size="22" /><span><strong>责任人跟进</strong><small>查看任务归属</small></span></button>
+              <button type="button" @click="exportRiskList"><Download :size="22" /><span><strong>导出处置清单</strong><small>生成 CSV 文件</small></span></button>
+            </div>
           </article>
         </section>
 
-        <footer class="aging-footer-note"><FileWarning :size="14" /><span>口径说明：金额仅用于库存追溯与资金占用展示，不作为呆滞处置排序的唯一依据；处置完成率需在后续接入责任人处置状态后计算。</span></footer>
       </main>
-    </PageState>
+      </PageState>
+    </div>
   </div>
 </template>
 
@@ -417,6 +448,14 @@ function exportRiskList() {
     radial-gradient(circle at 51% 29%, rgba(21, 104, 205, .19), transparent 28%),
     linear-gradient(180deg, #020c1d 0%, #04142b 44%, #020a18 100%);
   font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif;
+}
+.aging-viewport {
+  display: grid;
+  width: 100vw;
+  height: 100dvh;
+  place-items: center;
+  overflow: hidden;
+  background: #020817;
 }
 .aging-page::before { position: fixed; inset: 78px 0 0 var(--sidebar-width); z-index: 0; content: ""; pointer-events: none; opacity: .34; background-image: linear-gradient(rgba(45,130,206,.055) 1px, transparent 1px), linear-gradient(90deg, rgba(45,130,206,.045) 1px, transparent 1px); background-size: 34px 34px; mask-image: linear-gradient(#000, transparent 94%); }
 .is-collapsed .aging-page::before { left: var(--sidebar-collapsed); }
@@ -517,19 +556,20 @@ function exportRiskList() {
 @keyframes aging-live { 0%, 100% { opacity: .5; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.1); } }
 @keyframes aging-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes orbit-breathe { 0%, 100% { opacity: .55; filter: brightness(.8); } 50% { opacity: 1; filter: brightness(1.2); } }
-@media (max-width: 1380px) {
+/* Responsive variants are retained for a future fluid mode. */
+@media (max-width: 0px) {
   .aging-kpis { grid-template-columns: repeat(3, 1fr); }.aging-primary-grid { grid-template-columns: 1fr 1.35fr; }.right-column { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, 1fr); }.aging-secondary-grid { grid-template-columns: repeat(2, 1fr); }.aging-toolbar { align-items: stretch; flex-direction: column; }.aging-filters { justify-content: flex-end; }
 }
-@media (max-width: 900px) {
+@media (max-width: 0px) {
   .aging-page::before { left: 0; }.aging-hero { align-items: flex-start; flex-direction: column; }.aging-live { align-items: flex-start; }.aging-toolbar { position: relative; top: auto; }.aging-tabs { width: 100%; overflow-x: auto; }.aging-tabs button { min-width: 92px; }.aging-filters { flex-wrap: wrap; justify-content: flex-start; }.aging-kpis, .aging-primary-grid, .right-column, .aging-secondary-grid { grid-template-columns: 1fr 1fr; }.center-column { grid-column: span 2; }.right-column { grid-column: 1 / -1; }.health-core-panel { min-height: 420px; }
 }
-@media (max-width: 620px) {
+@media (max-width: 0px) {
   .aging-hero, .aging-toolbar { padding-inline: 16px; }.aging-title-block { align-items: flex-start; }.aging-emblem { width: 48px; height: 48px; flex: 0 0 48px; }.aging-title-block h2 { font-size: 22px; }.aging-live small { display: none; }.aging-filters label { flex: 1 1 130px; }.aging-kpis, .aging-primary-grid, .right-column, .aging-secondary-grid { grid-template-columns: 1fr; }.center-column { grid-column: auto; }.distribution-body { grid-template-columns: 116px 1fr; }.aging-donut { width: 108px; height: 108px; }.orbit-a { width: 340px; }.orbit-b { width: 270px; }.health-satellite { width: 100px; }.satellite-left { left: 1%; }.satellite-right { right: 1%; }.warning-grid { grid-template-columns: 1fr 1fr; }.aging-secondary-grid { grid-template-columns: 1fr; }.action-buttons { grid-template-columns: 1fr 1fr; }.source-note { max-width: 120px; text-align: right; }
 }
 @media (prefers-reduced-motion: reduce) { .aging-live i, .aging-kpi, .orbit { animation: none; } }
 
-/* Fullscreen 16:9 wallboard: matches the other warehouse command boards. */
-.aging-page { position: relative; z-index: 1; display: flex; width: min(100%, calc(100dvh * 16 / 9)); height: auto; min-height: 0; max-height: 100dvh; aspect-ratio: 16 / 9; flex-direction: column; margin: 0 auto; overflow: hidden; container-type: inline-size; }
+/* Fixed 1600 x 900 canvas, uniformly scaled to fit any viewport. */
+.aging-page { position: relative; z-index: 1; display: flex; width: 1600px; min-width: 1600px; max-width: none; height: 900px; min-height: 900px; max-height: none; aspect-ratio: 16 / 9; flex: none; flex-direction: column; margin: 0; overflow: hidden; container-type: inline-size; zoom: min(calc(100vw / 1600px), calc(100dvh / 900px)); }
 .aging-page::before { position: absolute; inset: 0; }
 .aging-hero { min-height: 0; flex: 0 0 clamp(68px, 5.2cqw, 90px); padding: clamp(9px, .8cqw, 14px) clamp(18px, 1.5cqw, 28px); }
 .aging-toolbar { position: relative; top: auto; min-height: 0; flex: 0 0 clamp(38px, 3cqw, 50px); align-items: center; justify-content: flex-end; flex-direction: row; padding: clamp(4px, .38cqw, 7px) clamp(18px, 1.5cqw, 28px); }
@@ -551,7 +591,7 @@ function exportRiskList() {
 .aging-secondary-grid .aging-panel { min-height: 0; height: 100%; }
 .aging-footer-note { min-height: 0; flex: 0 0 clamp(22px, 1.65cqw, 32px); margin-top: clamp(4px, .42cqw, 8px); }
 
-@media (max-height: 820px) and (min-width: 901px) {
+@media (max-height: 0px) {
   .aging-hero { flex-basis: 56px; padding-block: 5px; }.aging-emblem { width: 44px; height: 44px; }.aging-title-block h2 { font-size: 22px; }.aging-title-block span { margin-top: 3px; }
   .aging-toolbar { flex-basis: 34px; padding-block: 2px; }.aging-filters label, .aging-reset { height: 28px; }
   .aging-board { padding-block: 5px; }.aging-kpis { flex-basis: 60px; }.aging-kpi-icon { width: 38px; height: 38px; flex-basis: 38px; }.aging-kpi strong { font-size: 17px; }.aging-kpi small { margin-top: 3px; }
@@ -566,14 +606,262 @@ function exportRiskList() {
   .aging-secondary-grid { flex-basis: 100px; }.readiness-body, .priority-score, .value-body { height: calc(100% - 28px); padding: 4px 8px; }.readiness-ring { width: 56px; height: 56px; }.readiness-body { grid-template-columns: 65px 1fr; gap: 5px; }.priority-score > div strong { font-size: 19px; }.priority-score li, .value-body dl div { padding: 3px 0; }.value-body { grid-template-columns: 66px 1fr; }.value-gem { width: 52px; height: 52px; }.action-buttons { height: calc(100% - 28px); gap: 3px; padding: 5px; }.action-buttons button { min-height: 0; padding: 3px; }.aging-footer-note { flex-basis: 19px; margin-top: 3px; }
 }
 
-/* Space reclaimed from rules and quick actions is assigned to the data modules above. */
-.center-column .health-core-panel { flex: .52 1 0; }
-.center-column .warning-panel { flex: .25 1 0; }
-.center-column .owner-panel { flex: .23 1 0; }
-.right-column .warehouse-panel { flex: .54 1 0; }
-.right-column .heat-panel { flex: .46 1 0; }
-.aging-secondary-grid { flex-basis: clamp(90px, 6cqw, 116px); grid-template-columns: .95fr .78fr .88fr; }
-@media (max-height: 820px) and (min-width: 901px) {
+/* Reference layout: central health stage, stacked right rail and four action modules. */
+.center-column .health-core-panel { flex: .72 1 0; }
+.center-column .warning-panel { flex: .28 1 0; }
+.right-column .warehouse-panel { flex: .34 1 0; }
+.right-column .heat-panel { flex: .34 1 0; }
+.right-column .owner-panel { flex: .32 1 0; }
+.right-column .owner-table { height: calc(100% - 29px); padding: 2px 8px 4px; overflow: hidden; }
+.right-column .owner-head, .right-column .owner-row { min-height: 18px; }
+.right-column .warehouse-bars { gap: 5px; padding: 6px 9px; }
+.right-column .warehouse-bars > div { gap: 2px; }
+.right-column .warehouse-track { height: 7px; }
+.right-column .heat-matrix { gap: 2px; padding: 4px 8px 2px; }
+.right-column .heat-matrix > * { min-height: 20px; }
+.right-column .heat-legend { padding: 0 8px 4px; }
+.aging-secondary-grid { flex-basis: 168px; grid-template-columns: .95fr .78fr .88fr 1.35fr; }
+@media (max-height: 0px) {
   .aging-secondary-grid { flex-basis: 86px; }.readiness-body, .priority-score, .value-body { height: calc(100% - 28px); padding: 3px 8px; }.readiness-ring { width: 52px; height: 52px; }.readiness-body { grid-template-columns: 61px 1fr; gap: 5px; }.priority-score > div strong { font-size: 18px; }.priority-score li, .value-body dl div { padding: 2px 0; }.value-body { grid-template-columns: 62px 1fr; }.value-gem { width: 48px; height: 48px; }
+}
+
+/* Reference-driven cockpit detailing: double rails, luminous brackets and a real warehouse visual. */
+.aging-hero { justify-content: center; }
+.aging-live { position: absolute; right: 28px; }
+.aging-toolbar { justify-content: space-between; }
+.aging-tabs button { position: relative; overflow: hidden; }
+.aging-tabs button span { display: block; transform: skewX(15deg); }
+.aging-tabs button::after { position: absolute; right: 14px; bottom: 4px; left: 14px; height: 1px; content: ""; opacity: 0; background: #70cfff; box-shadow: 0 0 7px #2c9cff; transition: opacity .18s ease; }
+.aging-tabs button.active::after { opacity: 1; }
+.aging-tabs button:focus-visible, .aging-reset:focus-visible, .panel-heading button:focus-visible { outline: 2px solid #8bdcff; outline-offset: 2px; }
+
+.aging-kpi { border-color: color-mix(in srgb, var(--tone) 58%, transparent); box-shadow: inset 0 0 0 1px rgba(34,125,204,.13), inset 0 0 26px color-mix(in srgb, var(--tone) 8%, transparent), 0 0 13px rgba(0,96,191,.12); }
+.aging-kpi::before { position: absolute; top: 4px; right: 4px; bottom: 4px; left: 4px; border: 1px solid color-mix(in srgb, var(--tone) 17%, transparent); content: ""; pointer-events: none; clip-path: polygon(0 0, 24px 0, 24px 1px, 1px 1px, 1px 18px, 0 18px, 0 0, 100% 0, 100% 18px, calc(100% - 1px) 18px, calc(100% - 1px) 1px, calc(100% - 24px) 1px, calc(100% - 24px) 0, 100% 0, 100% 100%, calc(100% - 24px) 100%, calc(100% - 24px) calc(100% - 1px), calc(100% - 1px) calc(100% - 1px), calc(100% - 1px) calc(100% - 18px), 100% calc(100% - 18px), 100% 100%, 0 100%, 0 calc(100% - 18px), 1px calc(100% - 18px), 1px calc(100% - 1px), 24px calc(100% - 1px), 24px 100%, 0 100%); }
+
+.aging-panel { border-color: rgba(70,174,247,.48); box-shadow: inset 0 0 0 1px rgba(17,82,142,.32), inset 0 0 28px rgba(21,113,198,.055), 0 8px 26px rgba(0,0,0,.2), 0 0 10px rgba(20,113,211,.08); }
+.aging-panel::before { top: 4px; right: auto; bottom: auto; left: 4px; width: 34px; height: 18px; border-top: 1px solid #75d2ff; border-left: 1px solid #75d2ff; content: ""; background: none; box-shadow: -2px -2px 8px rgba(43,159,255,.32); }
+.aging-panel::after, .health-core-panel::after { position: absolute; right: 4px; bottom: 4px; left: auto; width: 34px; height: 18px; border-right: 1px solid #75d2ff; border-bottom: 1px solid #75d2ff; content: ""; pointer-events: none; opacity: 1; background: none; box-shadow: 2px 2px 8px rgba(43,159,255,.28); }
+.panel-heading { position: relative; padding-left: 8px; border-bottom-color: rgba(72,157,225,.3); background: linear-gradient(90deg, rgba(24,91,158,.38), rgba(7,36,70,.2) 62%, transparent); }
+.panel-heading::after { position: absolute; right: 0; bottom: -1px; width: 38%; height: 1px; content: ""; background: linear-gradient(90deg, transparent, rgba(82,181,255,.6)); }
+.panel-number { display: grid; min-width: 30px; height: 29px; place-items: center; padding-right: 4px; color: #e7f7ff; background: linear-gradient(135deg, rgba(49,151,244,.82), rgba(10,63,121,.2)); text-shadow: 0 0 9px #279dff; clip-path: polygon(0 0, 100% 0, 76% 100%, 0 100%); }
+
+.health-core-panel { background: repeating-radial-gradient(ellipse at 50% 58%, transparent 0 34px, rgba(51,139,216,.09) 35px 36px, transparent 37px 55px), radial-gradient(circle at 50% 51%, rgba(19,116,227,.25), transparent 42%), linear-gradient(180deg, rgba(4,27,57,.98), rgba(3,16,34,.98)); }
+.warehouse-core { top: 54%; width: min(68%, 340px); aspect-ratio: 1; filter: drop-shadow(0 0 18px rgba(38,151,255,.42)); }
+.warehouse-core::after { position: absolute; right: 7%; bottom: 4%; left: 7%; height: 15%; border: 1px solid rgba(64,178,255,.48); border-radius: 50%; content: ""; box-shadow: inset 0 0 18px rgba(39,146,255,.24), 0 0 19px rgba(39,146,255,.3); transform: translateY(42%); }
+.warehouse-core img { position: relative; z-index: 1; display: block; width: 100%; height: 100%; object-fit: contain; mix-blend-mode: screen; filter: saturate(1.12) contrast(1.06); mask-image: radial-gradient(ellipse 66% 68% at 50% 55%, #000 48%, rgba(0,0,0,.92) 62%, transparent 88%); }
+.orbit-a { width: min(88%, 520px); }.orbit-b { width: min(70%, 410px); }.orbit-c { width: min(52%, 300px); }
+.health-satellite { backdrop-filter: blur(5px); }
+
+/* Responsive variants are retained for a future fluid mode. */
+@media (max-width: 0px) {
+  .aging-toolbar { align-items: stretch; justify-content: space-between; }
+}
+@media (max-width: 0px) {
+  .aging-toolbar { flex-direction: column; }
+  .warehouse-core { width: min(62%, 300px); }
+}
+@media (max-width: 0px) {
+  .warehouse-core { width: min(72%, 270px); }
+  .aging-tabs button { min-width: 88px; padding-inline: 12px; }
+}
+
+@media (max-width: 0px) {
+  .aging-page { display: block; width: 100%; height: auto; min-height: 100dvh; max-height: none; aspect-ratio: auto; overflow: visible; container-type: normal; }
+  .aging-hero { min-height: 88px; padding: 12px 16px; }
+  .aging-toolbar { position: relative; top: auto; min-height: auto; padding: 8px 16px; }
+  .aging-tabs { flex: 0 0 auto; width: 100%; overflow-x: auto; }
+  .aging-filters { display: grid; width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)) 34px; }
+  .aging-filters label { min-width: 0; }
+  .aging-filters select { width: 100%; min-width: 0; }
+  .aging-board { display: block; padding: 10px 12px 28px; }
+  .aging-kpis { display: grid; height: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .aging-kpi { min-height: 82px; height: auto; }
+  .aging-primary-grid { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto; gap: 10px; margin-top: 10px; }
+  .aging-column, .center-column, .right-column { display: flex; height: auto; grid-column: auto; flex-direction: column; }
+  .aging-panel, .distribution-panel, .risk-list-panel, .warning-panel, .owner-panel, .warehouse-panel, .heat-panel { min-height: initial; }
+  .distribution-panel, .risk-list-panel, .warehouse-panel, .heat-panel { flex: none !important; }
+  .distribution-panel { min-height: 320px; }
+  .risk-list-panel { min-height: 350px; }
+  .health-core-panel { min-height: 430px; flex: none !important; }
+  .warning-panel { min-height: 150px; flex: none !important; }
+  .owner-panel { min-height: 190px; flex: none !important; }
+  .warehouse-panel { min-height: 250px; }
+  .heat-panel { min-height: 230px; }
+  .risk-table-wrap, .warning-grid, .owner-table { height: auto; overflow: auto; }
+  .aging-secondary-grid { display: grid; min-height: 0; height: auto; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+  .aging-secondary-grid .aging-panel { min-height: 150px; height: auto; }
+  .aging-footer-note { min-height: 38px; height: auto; padding: 7px 10px; text-align: center; }
+}
+
+@media (max-width: 0px) {
+  .aging-title-block { gap: 10px; }
+  .aging-title-block h2 { font-size: 20px; letter-spacing: .06em; }
+  .aging-title-block span { font-size: 8px; line-height: 1.4; }
+  .aging-live { display: none; }
+  .aging-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .aging-reset { width: 100%; }
+  .aging-kpi { gap: 8px; padding: 9px; }
+  .aging-kpi-icon { width: 40px; height: 40px; flex-basis: 40px; }
+  .aging-kpi strong { font-size: 17px; }
+  .aging-primary-grid, .right-column, .aging-secondary-grid { grid-template-columns: minmax(0, 1fr); }
+  .distribution-body { grid-template-columns: 112px minmax(0, 1fr); }
+  .warning-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .health-satellite { width: 92px; }
+  .aging-secondary-grid .aging-panel { min-height: 145px; }
+}
+
+/* Reference-calibrated visual system: 16:9 command cockpit. */
+.aging-page {
+  --aging-blue: #159cff;
+  --aging-cyan: #45dfff;
+  --aging-line: rgba(32, 151, 244, .66);
+  --aging-panel: rgba(2, 20, 43, .96);
+  color: #d9efff;
+  background:
+    linear-gradient(rgba(23, 105, 184, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(23, 105, 184, .03) 1px, transparent 1px),
+    radial-gradient(ellipse at 50% 34%, rgba(8, 76, 164, .24), transparent 43%),
+    linear-gradient(180deg, #010817 0%, #021127 50%, #010817 100%);
+  background-size: 32px 32px, 32px 32px, 100% 100%, 100% 100%;
+}
+.aging-page::before { opacity: .48; }
+.aging-hero {
+  min-height: 0;
+  flex: 0 0 100px;
+  align-items: flex-start;
+  padding: 10px 28px 0;
+  border-bottom-color: rgba(28, 137, 235, .48);
+  background: linear-gradient(180deg, rgba(1, 9, 25, .98), rgba(2, 16, 38, .92));
+  box-shadow: inset 0 -12px 30px rgba(0, 69, 151, .1);
+}
+.aging-hero::before { position: absolute; right: 24%; bottom: -1px; left: 24%; height: 2px; content: ""; background: #198fff; box-shadow: 0 0 12px #198fff; }
+.aging-version { position: absolute; top: 13px; left: 15px; display: grid; height: 27px; min-width: 110px; place-items: center; border: 1px solid rgba(28,139,236,.58); border-radius: 8px; color: #a9d8ff; font-size: 12px; background: rgba(4,35,74,.55); box-shadow: inset 0 0 12px rgba(30,128,219,.12); }
+.aging-title-block { gap: 14px; }
+.aging-emblem { width: 64px; height: 64px; color: #b5e7ff; border-color: rgba(84,192,255,.9); background: radial-gradient(circle, rgba(40,161,255,.44), rgba(2,31,72,.45)); filter: drop-shadow(0 0 10px rgba(48,156,255,.7)); }
+.aging-title-block h2 { color: #eef7ff; font-size: 36px; font-weight: 760; line-height: 1.05; letter-spacing: .1em; text-shadow: 0 0 16px rgba(109,190,255,.52); }
+.aging-title-block p { margin: 7px 0 0; color: #668db9; font-size: 11px; letter-spacing: .27em; }
+.aging-live { top: 13px; right: 18px; flex-direction: row; align-items: center; gap: 14px; }
+.aging-live small { padding-right: 14px; border-right: 1px solid rgba(54,122,190,.28); color: #55789c; font-size: 8px; line-height: 1.6; text-align: right; }
+.aging-live small b { color: #90b8d8; font-weight: 500; }
+.aging-live span { padding: 6px 12px; color: #c1e7ff; border-color: rgba(47,143,220,.4); background: rgba(4,26,57,.72); }
+.aging-toolbar { position: absolute; top: 54px; right: 0; left: 0; z-index: 32; min-height: 0; height: 43px; flex: none; padding: 4px 20px; border-bottom: 0; background: transparent; backdrop-filter: none; }
+.aging-tabs { height: 38px; }
+.aging-tabs button { min-width: 108px; padding-inline: 19px; border-color: rgba(23,108,194,.48); color: #8ba6c2; font-size: 11px; background: linear-gradient(180deg, rgba(5,31,65,.88), rgba(2,16,36,.82)); }
+.aging-tabs button.active { color: #d5efff; border-color: #31a8ff; background: linear-gradient(180deg, rgba(24,124,224,.68), rgba(8,52,111,.76)); box-shadow: inset 0 0 18px rgba(60,177,255,.3), 0 0 13px rgba(28,143,255,.34); }
+.aging-filters label, .aging-reset { height: 33px; border-color: rgba(48,125,199,.42); background: rgba(3,22,48,.86); }
+.aging-filters label span { color: #7394b2; font-size: 9px; }
+.aging-filters select { color: #c1dbef; font-size: 9px; }
+.aging-date { min-width: 108px; color: #77a7ce; }
+.aging-date b { color: #b7d4e9; font-size: 8px; font-weight: 500; }
+.aging-board { padding: 11px 18px 9px; }
+.aging-kpis { flex-basis: 92px; gap: 12px; }
+.aging-kpi { padding: 10px 15px; border-color: color-mix(in srgb, var(--tone) 68%, transparent); background: radial-gradient(circle at 21% 50%, color-mix(in srgb, var(--tone) 11%, transparent), transparent 31%), linear-gradient(145deg, rgba(4,31,62,.98), rgba(2,18,39,.97)); box-shadow: inset 0 0 0 1px rgba(32,105,176,.2), inset 0 0 30px color-mix(in srgb, var(--tone) 7%, transparent), 0 0 14px rgba(13,105,205,.16); }
+.aging-kpi-icon { width: 57px; height: 57px; flex-basis: 57px; border-color: color-mix(in srgb, var(--tone) 72%, transparent); box-shadow: inset 0 0 19px color-mix(in srgb, var(--tone) 22%, transparent), 0 0 17px color-mix(in srgb, var(--tone) 28%, transparent); }
+.aging-kpi-icon svg { width: 30px; height: 30px; stroke-width: 2; }
+.aging-kpi span { color: #9cb7cf; font-size: 10px; }
+.aging-kpi strong { margin-top: 5px; font-size: 23px; }
+.aging-kpi small { color: color-mix(in srgb, var(--tone) 82%, #8ba7bd); font-size: 9px; }
+.aging-primary-grid { grid-template-columns: minmax(0, .9fr) minmax(0, 1.28fr) minmax(0, 1.08fr); gap: 10px; margin-top: 10px; }
+.aging-panel { border-color: rgba(31,151,242,.62); background: linear-gradient(180deg, rgba(4,29,58,.97), rgba(2,17,37,.98)); box-shadow: inset 0 0 0 1px rgba(18,84,151,.34), inset 0 0 30px rgba(14,103,193,.06), 0 0 12px rgba(15,112,220,.12); }
+.panel-heading, .panel-heading.compact { min-height: 34px; padding: 4px 8px; border-bottom-color: rgba(42,137,213,.34); background: linear-gradient(90deg, rgba(17,80,144,.48), rgba(3,30,63,.24) 72%, transparent); }
+.panel-number { min-width: 32px; height: 31px; font-size: 22px; }
+.panel-heading h3 { color: #e3f2ff; font-size: 13px; }
+.panel-heading p { color: #6083a6; font-size: 6px; }
+.risk-table-wrap { height: calc(100% - 34px); }
+.risk-table-wrap th { height: 24px; font-size: 8px; }
+.risk-table-wrap th, .risk-table-wrap td { padding: 4px 6px; }
+.risk-table-wrap th, .risk-table-wrap td { padding-block: 3px; }
+.risk-table-wrap td small { margin-top: 1px; }
+.risk-table-wrap td { font-size: 8px; }
+.risk-table-wrap td strong { font-size: 9px; }
+.bucket-list button span, .bucket-list button b { font-size: 9px; }
+.distribution-body { grid-template-columns: 132px 1fr; gap: 7px; padding: 7px 10px 5px; }
+.aging-donut { width: 118px; height: 118px; }
+.bucket-list { gap: 1px; }
+.bucket-list button { min-height: 24px; padding: 2px 3px 4px; }
+.distribution-panel > footer { padding: 0 8px 6px; }
+.distribution-panel > footer span { min-height: 25px; }
+.distribution-panel > footer span { color: #50d9d1; font-size: 9px; }
+.distribution-panel > footer span:last-child { color: #ff625b; }
+.health-core-panel { background: repeating-radial-gradient(ellipse at 50% 58%, transparent 0 34px, rgba(47,145,230,.12) 35px 36px, transparent 37px 55px), radial-gradient(circle at 50% 50%, rgba(16,112,231,.32), transparent 44%), linear-gradient(180deg, rgba(3,25,53,.99), rgba(1,12,29,.99)); }
+.health-label.top { border-color: rgba(67,191,255,.82); box-shadow: inset 0 0 25px rgba(42,159,255,.34), 0 0 28px rgba(30,144,255,.4); }
+.health-label.top strong { color: #65d7ff; font-size: 40px; }
+.health-satellite { border-color: rgba(57,180,255,.72); box-shadow: inset 0 0 20px rgba(42,153,242,.24), 0 0 19px rgba(32,136,232,.25); }
+.health-satellite strong { font-size: 27px; }
+.satellite-bottom { bottom: 11%; }
+.warning-grid > div { border-color: currentColor; background: color-mix(in srgb, currentColor 9%, rgba(3,30,59,.86)); box-shadow: inset 0 0 18px color-mix(in srgb, currentColor 8%, transparent); }
+.warning-grid strong { font-size: 20px; }
+.warehouse-bars header strong, .warehouse-bars footer b { font-size: 9px; }
+.warehouse-bars header span, .warehouse-bars footer em, .owner-row, .owner-row strong, .owner-row small { font-size: 8px; }
+.heat-matrix > strong, .heat-matrix > span, .heat-corner { color: #86a6c0; font-size: 8px; }
+.heat-matrix > div:not(.heat-corner) { border-width: 1px; font-size: 11px; filter: saturate(1.35) brightness(1.12); }
+.aging-secondary-grid { flex-basis: 158px; grid-template-columns: 1.05fr .78fr .88fr 1.22fr; gap: 12px; }
+.readiness-ring { width: 88px; height: 88px; box-shadow: 0 0 18px rgba(61,222,209,.28); }
+.readiness-ring strong { font-size: 23px; }
+.priority-score > div strong { font-size: 29px; }
+.action-buttons { height: calc(100% - 34px); gap: 0; padding: 6px 4px; }
+.action-buttons button { min-height: 0; flex-direction: column; gap: 6px; border: 0; border-left: 1px solid rgba(42,113,180,.18); background: transparent; }
+.action-buttons button:first-child { border-left: 0; }
+.action-buttons button:hover { border-color: rgba(73,185,255,.3); background: rgba(20,89,145,.16); }
+.action-buttons button > svg { width: 53px; height: 53px; padding: 14px; border: 1px solid currentColor; border-radius: 50%; background: radial-gradient(circle, color-mix(in srgb, currentColor 18%, transparent), rgba(3,25,53,.82)); filter: drop-shadow(0 0 7px currentColor); }
+.action-buttons span { text-align: center; }
+.action-buttons strong { color: #d2e7f5; font-size: 9px; }
+.action-buttons small { font-size: 7px; }
+.health-stage::before { position: absolute; z-index: 1; top: 54%; left: 50%; width: min(92%, 560px); aspect-ratio: 1.9; border-radius: 50%; content: ""; background: conic-gradient(from 18deg, transparent 0 10%, rgba(255,161,45,.95) 13%, transparent 17% 47%, rgba(53,181,255,.9) 52%, transparent 57% 76%, rgba(255,161,45,.82) 80%, transparent 84%); mask: radial-gradient(closest-side, transparent calc(100% - 3px), #000 calc(100% - 2px)); filter: drop-shadow(0 0 6px rgba(255,151,38,.5)); transform: translate(-50%, -50%) rotateX(66deg); animation: orbit-energy 12s linear infinite reverse; }
+
+/* Motion system: restrained energy flow that keeps dense operational data readable. */
+.aging-page { background-size: 100% 100%, 100% 100%; animation: aging-atmosphere 12s ease-in-out infinite alternate; }
+.aging-hero::after { transform-origin: center; animation: hero-energy 4.8s ease-in-out infinite; }
+.aging-emblem { animation: emblem-charge 3.6s ease-in-out infinite; }
+.aging-live span { position: relative; overflow: hidden; }
+.aging-live span::after { position: absolute; inset: 0 auto 0 -55%; width: 42%; content: ""; pointer-events: none; background: linear-gradient(90deg, transparent, rgba(156,231,255,.22), transparent); transform: skewX(-18deg); animation: live-sweep 3.4s ease-in-out infinite; }
+
+.aging-kpi { transition: border-color .2s ease, filter .2s ease, transform .2s ease; }
+.aging-kpi:hover { z-index: 2; filter: brightness(1.12); transform: translateY(-2px); }
+.aging-kpi-icon { animation: kpi-charge 3.2s ease-in-out infinite; animation-delay: var(--delay); }
+.aging-kpi::after { animation: kpi-radar 5.2s ease-in-out infinite; animation-delay: var(--delay); }
+
+.aging-panel { transition: border-color .22s ease, box-shadow .22s ease; }
+.aging-panel:hover { border-color: rgba(92,196,255,.68); box-shadow: inset 0 0 0 1px rgba(28,103,171,.36), inset 0 0 34px rgba(26,127,220,.075), 0 8px 30px rgba(0,0,0,.22), 0 0 15px rgba(36,141,235,.13); }
+.aging-panel::before { animation: corner-charge 3.8s ease-in-out infinite; }
+.aging-panel::after, .health-core-panel::after { animation: corner-charge 3.8s ease-in-out -1.9s infinite; }
+.panel-heading::after { transform-origin: right center; animation: heading-rail 4.2s ease-in-out infinite; }
+.panel-number { position: relative; overflow: hidden; }
+.panel-number::after { position: absolute; inset: 0 auto 0 -70%; width: 48%; content: ""; background: linear-gradient(90deg, transparent, rgba(225,249,255,.55), transparent); transform: skewX(-16deg); animation: number-flash 4.6s ease-in-out infinite; }
+
+.orbit::before { position: absolute; inset: -3px; border-radius: 50%; content: ""; background: conic-gradient(from 0deg, transparent 0 60%, rgba(58,171,255,.05) 69%, rgba(104,220,255,.9) 78%, rgba(58,171,255,.08) 86%, transparent 94%); mask: radial-gradient(closest-side, transparent calc(100% - 3px), #000 calc(100% - 2px)); animation: orbit-energy 5.8s linear infinite; }
+.orbit-b::before { animation-duration: 7.2s; animation-direction: reverse; }
+.orbit-c::before { animation-duration: 4.6s; }
+.health-label.top { animation: health-beacon 3.1s ease-in-out infinite; }
+.warehouse-core { animation: warehouse-hover 4.8s ease-in-out infinite; }
+.warehouse-core img { animation: warehouse-luminance 4.8s ease-in-out infinite; }
+.warehouse-scan { position: absolute; z-index: 3; top: 17%; right: 20%; left: 20%; height: 2px; pointer-events: none; opacity: 0; background: linear-gradient(90deg, transparent, rgba(117,229,255,.96), transparent); box-shadow: 0 0 8px rgba(75,190,255,.9), 0 8px 22px rgba(37,145,255,.35); animation: warehouse-scan 3.6s cubic-bezier(.45,0,.55,1) infinite; }
+.health-satellite { animation: satellite-signal 4s ease-in-out infinite; }
+.satellite-right { animation-delay: -1.3s; }.satellite-bottom { animation-delay: -2.6s; }
+.warehouse-track i, .readiness-list > i em { position: relative; overflow: hidden; }
+.warehouse-track i::after, .readiness-list > i em::after { position: absolute; inset: 0 auto 0 -45%; width: 34%; content: ""; background: linear-gradient(90deg, transparent, rgba(255,255,255,.78), transparent); animation: progress-sweep 3s ease-in-out infinite; }
+
+@keyframes aging-atmosphere { from { filter: saturate(.96); } to { filter: saturate(1.06); } }
+@keyframes hero-energy { 0%, 100% { opacity: .45; transform: scaleX(.58); } 48% { opacity: 1; transform: scaleX(1); } }
+@keyframes emblem-charge { 0%, 100% { box-shadow: inset 0 0 18px rgba(46,169,255,.2), 0 0 12px rgba(37,144,255,.14); } 50% { box-shadow: inset 0 0 27px rgba(62,185,255,.34), 0 0 24px rgba(42,157,255,.3); } }
+@keyframes live-sweep { 0%, 38% { left: -55%; opacity: 0; } 52% { opacity: 1; } 72%, 100% { left: 120%; opacity: 0; } }
+@keyframes kpi-charge { 0%, 100% { box-shadow: inset 0 0 12px color-mix(in srgb, var(--tone) 10%, transparent), 0 0 9px color-mix(in srgb, var(--tone) 10%, transparent); } 50% { box-shadow: inset 0 0 21px color-mix(in srgb, var(--tone) 23%, transparent), 0 0 20px color-mix(in srgb, var(--tone) 26%, transparent); } }
+@keyframes kpi-radar { 0%, 100% { opacity: .28; transform: scale(.92); } 50% { opacity: .72; transform: scale(1.12); } }
+@keyframes corner-charge { 0%, 100% { opacity: .5; filter: brightness(.8); } 50% { opacity: 1; filter: brightness(1.45); } }
+@keyframes heading-rail { 0%, 100% { opacity: .22; transform: scaleX(.22); } 48% { opacity: .9; transform: scaleX(1); } }
+@keyframes number-flash { 0%, 48% { left: -70%; opacity: 0; } 58% { opacity: 1; } 72%, 100% { left: 130%; opacity: 0; } }
+@keyframes orbit-energy { to { transform: rotate(360deg); } }
+@keyframes health-beacon { 0%, 100% { box-shadow: inset 0 0 17px rgba(50,163,255,.2), 0 0 13px rgba(43,155,255,.18); } 50% { box-shadow: inset 0 0 25px rgba(73,190,255,.35), 0 0 27px rgba(43,155,255,.36); } }
+@keyframes warehouse-hover { 0%, 100% { margin-top: 3px; } 50% { margin-top: -4px; } }
+@keyframes warehouse-luminance { 0%, 100% { filter: saturate(1.05) contrast(1.04) brightness(.94); } 50% { filter: saturate(1.2) contrast(1.08) brightness(1.08); } }
+@keyframes warehouse-scan { 0%, 12% { top: 17%; opacity: 0; } 25% { opacity: 1; } 72% { opacity: .8; } 88%, 100% { top: 79%; opacity: 0; } }
+@keyframes satellite-signal { 0%, 100% { filter: brightness(.92); } 50% { filter: brightness(1.13); } }
+@keyframes progress-sweep { 0%, 28% { left: -45%; opacity: 0; } 45% { opacity: .85; } 68%, 100% { left: 120%; opacity: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .aging-page, .aging-hero::after, .aging-emblem, .aging-live span::after, .aging-kpi-icon, .aging-kpi::after,
+  .aging-panel::before, .aging-panel::after, .health-core-panel::after, .panel-heading::after, .panel-number::after,
+  .orbit, .orbit::before, .health-label.top, .warehouse-core, .warehouse-core img, .warehouse-scan, .health-satellite,
+  .warehouse-track i::after, .readiness-list > i em::after { animation: none !important; }
 }
 </style>
