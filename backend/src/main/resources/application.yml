@@ -36,3 +36,7 @@ warehouse:
   seed-enabled: ${WAREHOUSE_SEED_ENABLED:true}
   query-concurrency: ${WAREHOUSE_QUERY_CONCURRENCY:6}
   query-queue-capacity: ${WAREHOUSE_QUERY_QUEUE_CAPACITY:100}
+  demo-mutation:
+    enabled: ${WAREHOUSE_DEMO_MUTATION_ENABLED:true}
+    interval-ms: ${WAREHOUSE_DEMO_MUTATION_INTERVAL_MS:10000}
+    initial-delay-ms: ${WAREHOUSE_DEMO_MUTATION_INITIAL_DELAY_MS:10000}

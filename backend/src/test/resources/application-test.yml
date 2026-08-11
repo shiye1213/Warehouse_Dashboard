@@ -11,3 +11,5 @@ spring:
 
 warehouse:
   seed-enabled: true
+  demo-mutation:
+    enabled: false
