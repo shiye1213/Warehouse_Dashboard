@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   AlertTriangle,
   ArrowRight,
@@ -10,19 +10,19 @@ import {
   CheckCircle2,
   CircleDollarSign,
   Clock3,
+  Crosshair,
   Download,
-  Menu,
+  Gem,
   PackageOpen,
   PackageSearch,
   RotateCcw,
-  Scale,
+  ShieldCheck,
   ShieldAlert,
   Sparkles,
-  Target,
   UserRoundCheck,
 } from 'lucide-vue-next'
 import PageState from '../components/PageState.vue'
-import inventoryHealthWarehouse from '../assets/inventory-health-warehouse.jpg'
+import inventoryHealthWarehouse from '../assets/inventory-health-warehouse-hologram.png'
 import { registerProjectRefresh } from '../composables/useProjectRefresh'
 import { dashboardApi } from '../services/api'
 
@@ -33,6 +33,16 @@ const warehouseFilter = ref('全部仓库')
 const categoryFilter = ref('全部物料')
 const riskFilter = ref('全部风险')
 const selectedBucket = ref('')
+const simulatedClockSeconds = ref(8 * 60)
+
+const simulatedTimestamp = computed(() => {
+  const secondsInHour = simulatedClockSeconds.value % 3600
+  const minutes = Math.floor(secondsInHour / 60)
+  const seconds = secondsInHour % 60
+  return `2026-07-31 11:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
+})
+
+let simulatedClockTimer = 0
 
 const bucketOrder = ['0-30天', '31-60天', '61-90天', '91-180天', '181-365天', '365天以上']
 const bucketColors = ['#3ca7ff', '#54d9d0', '#8bd45f', '#f3c44f', '#f28a32', '#f05252']
@@ -50,7 +60,13 @@ async function load() {
 }
 
 registerProjectRefresh('inventory-aging-dashboard', load)
-onMounted(load)
+onMounted(() => {
+  load()
+  simulatedClockTimer = window.setInterval(() => {
+    simulatedClockSeconds.value = (simulatedClockSeconds.value + 1) % 3600
+  }, 1000)
+})
+onUnmounted(() => window.clearInterval(simulatedClockTimer))
 
 const batches = computed(() => snapshot.value?.batches || [])
 const skus = computed(() => snapshot.value?.skus || [])
@@ -146,6 +162,23 @@ const riskRows = computed(() => filteredSkus.value
   .filter((item) => item.isStagnant || item.stagnantLevel === '预警')
   .filter((item) => !selectedBucket.value || ageBucketFor(item.maxAgeDays) === selectedBucket.value)
   .sort((a, b) => Number(b.stagnantScore || 0) - Number(a.stagnantScore || 0) || Number(b.maxAgeDays || 0) - Number(a.maxAgeDays || 0)))
+
+const riskTickerRows = computed(() => {
+  const rows = riskRows.value.slice(0, 12)
+  const tickerRows = rows.length > 6 ? [...rows, ...rows] : rows
+  return tickerRows.map((item, index) => ({
+    ...item,
+    tickerKey: `${item.warehouseId}-${item.sku}-${index}`,
+  }))
+})
+
+const riskTickerStyle = computed(() => {
+  const rowCount = Math.min(riskRows.value.length, 12)
+  return {
+    '--risk-row-count': rowCount,
+    '--risk-scroll-duration': `${Math.max(18, rowCount * 2.4)}s`,
+  }
+})
 
 const heatCells = computed(() => {
   const names = [...new Set(filteredSkus.value.map((item) => item.warehouseName))]
@@ -248,17 +281,15 @@ function exportRiskList() {
     <div class="aging-page">
       <PageState :loading="loading && !snapshot" :error="error" @retry="load">
       <header class="aging-hero">
-        <span class="aging-version">V4/4 展示版</span>
         <div class="aging-title-block">
           <button type="button" class="aging-emblem" aria-label="打开系统导航" title="打开系统导航" @click="openNavigation">
-            <PackageSearch :size="30" />
-            <span class="aging-emblem-menu" aria-hidden="true"><Menu :size="11" :stroke-width="2.4" /></span>
-            <i />
-            <i />
+            <span class="aging-emblem-frame" aria-hidden="true" />
+            <PackageSearch class="aging-emblem-icon" :size="31" :stroke-width="1.8" />
+            <span class="aging-emblem-scan" aria-hidden="true" />
           </button>
-          <div><h2>库存健康与呆滞管理</h2><p>INVENTORY HEALTH &amp; AGING MANAGEMENT</p></div>
+          <div><h2>库存健康与呆滞管理</h2></div>
         </div>
-        <div class="aging-live"><small>数据更新时间<br><b>{{ formatDate(snapshot?.meta?.snapshotDate) }} 10:30:00</b></small><span><i /> 实时数据</span></div>
+        <div class="aging-live"><small>数据更新时间<br><b>{{ simulatedTimestamp }}</b></small><span><i /> 模拟实时</span></div>
       </header>
 
       <div class="aging-toolbar" aria-label="看板导航与筛选">
@@ -297,19 +328,19 @@ function exportRiskList() {
 
             <article id="aging-risk" class="aging-panel risk-list-panel">
               <header class="panel-heading"><span class="panel-number">高风险物料清单</span><button @click="exportRiskList"><Download :size="13" /> 导出</button></header>
-              <div class="risk-table-wrap">
-                <table>
-                  <thead><tr><th>物料 / 项目</th><th>仓库</th><th>最大库龄</th><th>等级</th><th>责任人</th></tr></thead>
-                  <tbody>
-                    <tr v-for="item in riskRows.slice(0, 8)" :key="`${item.warehouseId}-${item.sku}`">
-                      <td><strong>{{ item.materialName }}</strong><small>{{ item.projectNo }} · {{ item.materialCode }}</small></td>
-                      <td>{{ item.warehouseName }}</td>
-                      <td><b>{{ item.maxAgeDays }}</b> 天</td>
-                      <td><span class="risk-level" :class="levelClass(item.stagnantLevel)">{{ item.stagnantLevel }}</span></td>
-                      <td>{{ item.owner }}</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div class="risk-table-wrap" role="table" aria-label="高风险物料动态清单">
+                <div class="risk-table-head" role="row"><span role="columnheader">物料 / 项目</span><span role="columnheader">仓库</span><span role="columnheader">最大库龄</span><span role="columnheader">等级</span><span role="columnheader">责任人</span></div>
+                <div class="risk-scroll-viewport" role="rowgroup">
+                  <div class="risk-scroll-track" :class="{ 'is-scrolling': riskRows.length > 6 }" :style="riskTickerStyle">
+                    <div v-for="item in riskTickerRows" :key="item.tickerKey" class="risk-scroll-row" role="row">
+                      <span role="cell"><strong>{{ item.materialName }}</strong><small>{{ item.projectNo }} · {{ item.materialCode }}</small></span>
+                      <span role="cell">{{ item.warehouseName }}</span>
+                      <span role="cell"><b>{{ item.maxAgeDays }}</b> 天</span>
+                      <span role="cell"><i class="risk-level" :class="levelClass(item.stagnantLevel)">{{ item.stagnantLevel }}</i></span>
+                      <span role="cell">{{ item.owner }}</span>
+                    </div>
+                  </div>
+                </div>
                 <div v-if="!riskRows.length" class="aging-empty"><BadgeCheck :size="18" /> 当前筛选范围内暂无高风险物料</div>
               </div>
             </article>
@@ -317,16 +348,16 @@ function exportRiskList() {
 
           <div class="aging-column center-column">
             <article class="aging-panel health-core-panel">
-              <div class="health-label top"><span>库存健康指数</span><strong>{{ healthScore }}</strong><em>分 · {{ healthLabel }}</em></div>
+              <div class="health-label top"><i class="health-glyph"><ShieldCheck :size="21" /></i><span class="health-caption">库存健康指数</span><div class="health-score-line"><strong>{{ healthScore }}</strong><em>分 · {{ healthLabel }}</em></div></div>
               <div class="health-stage">
                 <div class="orbit orbit-a" /><div class="orbit orbit-b" /><div class="orbit orbit-c" />
                 <div class="warehouse-core">
-                  <img :src="inventoryHealthWarehouse" alt="立体仓储货架与库存托盘" />
+                  <img :src="inventoryHealthWarehouse" width="1254" height="1254" decoding="async" alt="透明全息立体仓储货架与库存托盘" />
                   <span class="warehouse-scan" aria-hidden="true" />
                 </div>
-                <div class="health-satellite satellite-left" :class="scoreTone(amountHealth)"><small>金额健康度</small><strong>{{ amountHealth }}</strong><em>分</em></div>
-                <div class="health-satellite satellite-right" :class="scoreTone(cycleHealth)"><small>周转健康度</small><strong>{{ cycleHealth }}</strong><em>分</em></div>
-                <div class="health-satellite satellite-bottom" :class="scoreTone(structureHealth)"><small>结构健康度</small><strong>{{ structureHealth }}</strong><em>分</em></div>
+                <div class="health-satellite satellite-left" :class="scoreTone(amountHealth)"><i class="satellite-glyph"><CircleDollarSign :size="17" /></i><small>金额健康度</small><strong>{{ amountHealth }}</strong><em>分</em></div>
+                <div class="health-satellite satellite-right" :class="scoreTone(cycleHealth)"><i class="satellite-glyph"><RotateCcw :size="17" /></i><small>周转健康度</small><strong>{{ cycleHealth }}</strong><em>分</em></div>
+                <div class="health-satellite satellite-bottom" :class="scoreTone(structureHealth)"><i class="satellite-glyph"><Boxes :size="17" /></i><small>结构健康度</small><strong>{{ structureHealth }}</strong><em>分</em></div>
               </div>
               <div class="health-rule"><Sparkles :size="15" /><span>呆滞判定</span><strong>库龄 &gt; 180 天 且 最近 90 天无出库</strong></div>
             </article>
@@ -384,12 +415,12 @@ function exportRiskList() {
 
           <article class="aging-panel action-score-panel">
             <header class="panel-heading compact"><span class="panel-number">处置优先级</span></header>
-            <div class="priority-score"><div><Target :size="34" /><strong>{{ p1Count }}</strong><span>P1 高优先级</span></div><ul><li><span>P1 高</span><b>{{ p1Count }} 项</b></li><li><span>P2 中</span><b>{{ p2Count }} 项</b></li><li><span>责任人组</span><b>{{ ownerRows.length }} 组</b></li></ul></div>
+            <div class="priority-score"><div><i class="tech-symbol priority-symbol"><Crosshair :size="31" /></i><strong>{{ p1Count }}</strong><span>P1 高优先级</span></div><ul><li><span>P1 高</span><b>{{ p1Count }} 项</b></li><li><span>P2 中</span><b>{{ p2Count }} 项</b></li><li><span>责任人组</span><b>{{ ownerRows.length }} 组</b></li></ul></div>
           </article>
 
           <article class="aging-panel value-panel">
             <header class="panel-heading compact"><span class="panel-number">潜在价值挖掘</span></header>
-            <div class="value-body"><div class="value-gem"><Scale :size="36" /></div><dl><div><dt>可优先去化金额</dt><dd>{{ compactMoney(p1Amount) }}</dd></div><div><dt>全部呆滞金额</dt><dd>{{ compactMoney(stagnantAmount) }}</dd></div><div><dt>可推动处置 SKU</dt><dd>{{ stagnantSkus.length }} 个</dd></div></dl></div>
+            <div class="value-body"><div class="tech-symbol value-gem"><Gem :size="34" /></div><dl><div><dt>可优先去化金额</dt><dd>{{ compactMoney(p1Amount) }}</dd></div><div><dt>全部呆滞金额</dt><dd>{{ compactMoney(stagnantAmount) }}</dd></div><div><dt>可推动处置 SKU</dt><dd>{{ stagnantSkus.length }} 个</dd></div></dl></div>
           </article>
 
         </section>
@@ -430,9 +461,6 @@ function exportRiskList() {
 .aging-emblem { position: relative; display: grid; width: 58px; height: 58px; padding: 0; cursor: pointer; place-items: center; border: 1px solid rgba(76,190,255,.65); color: #7bd9ff; background: linear-gradient(145deg, rgba(29,142,255,.28), rgba(2,26,63,.2)); box-shadow: inset 0 0 22px rgba(46,169,255,.25), 0 0 18px rgba(37,144,255,.18); clip-path: polygon(50% 0, 94% 24%, 94% 76%, 50% 100%, 6% 76%, 6% 24%); transition: filter .18s ease, transform .18s ease; }
 .aging-emblem:hover { filter: brightness(1.28); transform: scale(1.04); }
 .aging-emblem:focus-visible { outline: 2px solid #8bdeff; outline-offset: 3px; }
-.aging-emblem i { position: absolute; inset: 8px; border: 1px solid rgba(86,200,255,.22); clip-path: inherit; }
-.aging-emblem i:last-child { inset: 15px; }
-.aging-emblem-menu { position: absolute; right: 5px; bottom: 9px; z-index: 2; display: grid; width: 16px; height: 16px; place-items: center; border: 1px solid rgba(142,224,255,.82); border-radius: 50%; color: #d6f5ff; background: #0c5591; box-shadow: 0 0 8px rgba(62,184,255,.75); }
 .aging-title-block p { margin: 0 0 4px; color: #5da9e8; font: 600 8px/1 "Bahnschrift", sans-serif; letter-spacing: .34em; }
 .aging-title-block h2 { margin: 0; color: #e7f4ff; font-size: clamp(24px, 2vw, 34px); font-weight: 720; letter-spacing: .12em; text-shadow: 0 0 14px rgba(102,187,255,.3); }
 .aging-title-block span { display: block; margin-top: 5px; color: #698cae; font-size: 9px; letter-spacing: .1em; }
@@ -867,10 +895,432 @@ function exportRiskList() {
 @keyframes satellite-signal { 0%, 100% { filter: brightness(.92); } 50% { filter: brightness(1.13); } }
 @keyframes progress-sweep { 0%, 28% { left: -45%; opacity: 0; } 45% { opacity: .85; } 68%, 100% { left: 120%; opacity: 0; } }
 
+/* Futuristic readability pass: glossy hierarchy, dimensional symbols and a seamless risk ticker. */
+.aging-page {
+  color: #eff8ff;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+}
+.aging-panel {
+  border-color: rgba(52, 169, 255, .74);
+  background:
+    linear-gradient(115deg, rgba(72, 190, 255, .055), transparent 24%),
+    radial-gradient(circle at 50% -15%, rgba(34, 137, 255, .16), transparent 48%),
+    linear-gradient(180deg, rgba(4, 30, 61, .985), rgba(1, 15, 34, .99));
+  box-shadow:
+    inset 0 1px 0 rgba(169, 228, 255, .18),
+    inset 0 0 0 1px rgba(21, 91, 163, .42),
+    inset 0 0 36px rgba(17, 111, 211, .075),
+    0 8px 24px rgba(0, 5, 18, .38),
+    0 0 14px rgba(16, 120, 235, .16);
+}
+.panel-heading, .panel-heading.compact {
+  background:
+    linear-gradient(90deg, rgba(20, 101, 184, .62), rgba(5, 42, 85, .34) 64%, transparent),
+    linear-gradient(180deg, rgba(84, 186, 255, .08), transparent);
+  box-shadow: inset 0 1px 0 rgba(156, 222, 255, .14);
+}
+.panel-heading h3 { font-size: 14px; font-weight: 750; letter-spacing: .045em; text-shadow: 0 0 10px rgba(88, 188, 255, .3); }
+.panel-heading p { color: #789fc4; font-size: 7.5px; font-weight: 650; letter-spacing: .16em; }
+.panel-heading button, .unit-note, .source-note { color: #a9d8f7; font-size: 9px; font-weight: 650; }
+.panel-number { color: #d9f4ff; text-shadow: 0 0 10px #2c9fff; }
+
+.aging-kpi { box-shadow: inset 0 1px 0 rgba(255,255,255,.17), inset 0 0 0 1px rgba(34,125,204,.28), inset 0 0 32px color-mix(in srgb, var(--tone) 10%, transparent), 0 7px 18px rgba(0,5,18,.32), 0 0 16px color-mix(in srgb, var(--tone) 18%, transparent); }
+.aging-kpi-icon { position: relative; overflow: hidden; transform: perspective(100px) rotateX(8deg); }
+.aging-kpi-icon::before { position: absolute; inset: 4px; border: 1px solid color-mix(in srgb, var(--tone) 45%, transparent); border-radius: 50%; content: ""; box-shadow: inset 0 -7px 13px rgba(0,0,0,.28), inset 0 5px 12px rgba(255,255,255,.08); }
+.aging-kpi-icon::after { position: absolute; top: 5px; right: 10px; left: 10px; height: 13px; border-radius: 50%; content: ""; background: linear-gradient(180deg, rgba(255,255,255,.3), transparent); filter: blur(1px); }
+.aging-kpi-icon svg { position: relative; z-index: 1; filter: drop-shadow(0 0 6px currentColor); }
+.aging-kpi span { color: #b6cee2; font-size: 11px; font-weight: 650; }
+.aging-kpi strong { color: #f6fbff; font-weight: 780; text-shadow: 0 0 11px rgba(121,202,255,.23); }
+.aging-kpi small { font-size: 10px; font-weight: 620; }
+
+.risk-table-wrap { position: relative; display: flex; flex-direction: column; padding: 0 5px 4px; }
+.risk-table-head, .risk-scroll-row { display: grid; grid-template-columns: minmax(0, 1.72fr) .72fr .76fr .88fr .7fr; align-items: center; gap: 5px; }
+.risk-table-head { z-index: 2; height: 27px; flex: 0 0 27px; padding: 0 7px; border-bottom: 1px solid rgba(76, 161, 225, .26); color: #8fb9d7; font-size: 9px; font-weight: 700; background: linear-gradient(90deg, rgba(18,80,137,.42), rgba(7,38,76,.22)); box-shadow: 0 5px 14px rgba(0,11,28,.3); }
+.risk-scroll-viewport { position: relative; flex: 1; overflow: hidden; mask-image: linear-gradient(to bottom, transparent 0, #000 7%, #000 93%, transparent 100%); }
+.risk-scroll-track { will-change: transform; }
+.risk-scroll-track.is-scrolling { animation: risk-ticker var(--risk-scroll-duration) linear infinite; }
+.risk-scroll-viewport:hover .risk-scroll-track { animation-play-state: paused; }
+.risk-scroll-row { height: 32px; padding: 0 7px; border-bottom: 1px solid rgba(61, 141, 202, .13); color: #a9c6db; font-size: 8.5px; font-weight: 600; background: linear-gradient(90deg, rgba(15,75,126,.1), transparent 72%); }
+.risk-scroll-row:nth-child(2n) { background: linear-gradient(90deg, rgba(28,112,179,.14), rgba(3,27,57,.04)); }
+.risk-scroll-row > span { min-width: 0; }
+.risk-scroll-row strong, .risk-scroll-row small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.risk-scroll-row strong { color: #e5f5ff; font-size: 10px; font-weight: 720; }
+.risk-scroll-row small { margin-top: 1px; color: #7198b6; font-size: 7px; font-weight: 560; }
+.risk-scroll-row b { color: #ffc15f; font-size: 10px; text-shadow: 0 0 7px rgba(255,162,52,.42); }
+.risk-scroll-row .risk-level { min-width: 49px; padding: 3px 5px; font-size: 7px; font-style: normal; font-weight: 720; box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 0 8px currentColor; }
+@keyframes risk-ticker { to { transform: translateY(calc(var(--risk-row-count) * -32px)); } }
+
+.health-core-panel {
+  background:
+    repeating-radial-gradient(ellipse at 50% 59%, transparent 0 36px, rgba(55,160,246,.12) 37px 38px, transparent 39px 58px),
+    radial-gradient(circle at 50% 52%, rgba(12,109,229,.34), transparent 47%),
+    linear-gradient(180deg, rgba(2,24,52,.99), rgba(1,11,28,.995));
+}
+.health-stage::after { position: absolute; z-index: 0; right: 5%; bottom: 7%; left: 5%; height: 35%; border: 1px solid rgba(49,160,255,.24); border-radius: 50%; content: ""; background: repeating-linear-gradient(90deg, transparent 0 22px, rgba(57,163,245,.1) 23px 24px), repeating-linear-gradient(0deg, transparent 0 14px, rgba(57,163,245,.08) 15px 16px); box-shadow: inset 0 0 25px rgba(20,120,225,.17), 0 0 18px rgba(22,122,226,.18); transform: perspective(220px) rotateX(66deg); }
+.warehouse-core { top: 55%; width: min(78%, 390px); aspect-ratio: 1; filter: drop-shadow(0 0 13px rgba(48,168,255,.72)) drop-shadow(0 14px 15px rgba(0,7,25,.58)); }
+.warehouse-core::after { z-index: -1; right: 4%; bottom: 5%; left: 4%; height: 17%; border-color: rgba(81,202,255,.78); background: radial-gradient(ellipse, rgba(35,148,255,.22), transparent 69%); box-shadow: inset 0 0 21px rgba(48,174,255,.38), 0 0 27px rgba(28,148,255,.46); }
+.warehouse-core img { width: 100%; height: 100%; object-fit: contain; mix-blend-mode: normal; mask-image: none; filter: saturate(1.12) contrast(1.07) brightness(1.03) drop-shadow(0 0 7px rgba(73,193,255,.65)); }
+.warehouse-scan { right: 14%; left: 14%; }
+
+.health-label.top { width: 172px; height: 84px; overflow: visible; border-color: rgba(82,204,255,.92); background: radial-gradient(ellipse, rgba(10,93,176,.92), rgba(1,26,65,.95)); box-shadow: inset 0 7px 17px rgba(138,224,255,.1), inset 0 -12px 20px rgba(0,9,35,.55), 0 8px 9px rgba(0,5,22,.48), 0 0 30px rgba(35,159,255,.48); transform: translateX(-50%) perspective(180px) rotateX(7deg); }
+.health-label.top::before, .health-satellite::before { position: absolute; inset: 5px; border: 1px solid rgba(112,218,255,.27); border-radius: inherit; content: ""; pointer-events: none; }
+.health-glyph, .satellite-glyph { display: grid; place-items: center; color: #91e7ff; font-style: normal; background: linear-gradient(145deg, rgba(88,210,255,.32), rgba(3,37,83,.82)); box-shadow: inset 0 1px 0 rgba(255,255,255,.28), inset 0 -7px 11px rgba(0,8,37,.48), 0 0 12px rgba(39,172,255,.55); clip-path: polygon(50% 0, 92% 25%, 92% 75%, 50% 100%, 8% 75%, 8% 25%); }
+.health-glyph { position: absolute; top: 18px; left: 13px; width: 34px; height: 39px; }
+.health-caption { top: 12px !important; left: 53px; color: #c2e8ff !important; font-size: 9px !important; font-weight: 720; }
+.health-label.top strong { margin-left: 28px; color: #8de7ff; font-size: 39px; font-weight: 800; text-shadow: 0 0 13px #168fff; }
+.health-label.top em { left: 53px; color: #7df0c1; font-size: 8px; font-weight: 700; }
+.health-satellite { width: 132px; height: 75px; padding-left: 25px; border-color: rgba(78,194,255,.82); background: radial-gradient(ellipse, rgba(12,91,170,.92), rgba(1,24,57,.96)); box-shadow: inset 0 5px 14px rgba(118,219,255,.08), inset 0 -13px 18px rgba(0,8,31,.56), 0 8px 10px rgba(0,5,20,.42), 0 0 22px rgba(28,145,242,.36); transform: perspective(170px) rotateX(8deg); }
+.satellite-bottom { transform: translateX(-50%) perspective(170px) rotateX(8deg); }
+.satellite-glyph { position: absolute; top: 18px; left: 11px; width: 31px; height: 36px; }
+.health-satellite small { top: 11px; left: 49px; color: #a8d5ef; font-size: 8px; font-weight: 680; }
+.health-satellite strong { margin: 14px 0 0 18px; font-size: 27px; font-weight: 800; text-shadow: 0 0 11px currentColor; }
+.health-satellite em { margin-top: 24px; font-size: 8px; font-weight: 700; }
+
+.tech-symbol { position: relative; display: grid; width: 58px; height: 62px; place-items: center; flex: 0 0 auto; overflow: visible; color: #5ee7ff; font-style: normal; background: linear-gradient(145deg, rgba(61,205,255,.3), rgba(2,30,72,.9)); box-shadow: inset 0 2px 0 rgba(219,248,255,.25), inset 0 -13px 18px rgba(0,8,35,.6), 0 10px 10px rgba(0,5,21,.5), 0 0 20px rgba(38,184,255,.42); clip-path: polygon(50% 0, 92% 24%, 92% 76%, 50% 100%, 8% 76%, 8% 24%); transform: perspective(130px) rotateX(8deg); }
+.tech-symbol::before { position: absolute; inset: 7px; border: 1px solid currentColor; content: ""; opacity: .5; clip-path: inherit; }
+.tech-symbol svg { position: relative; z-index: 1; filter: drop-shadow(0 0 7px currentColor); }
+.priority-symbol { color: #ffb443; background: linear-gradient(145deg, rgba(255,172,54,.32), rgba(48,22,3,.92)); box-shadow: inset 0 2px 0 rgba(255,240,196,.22), inset 0 -13px 18px rgba(25,7,0,.62), 0 10px 10px rgba(0,5,21,.5), 0 0 20px rgba(255,151,38,.38); }
+.value-gem { width: 62px; height: 68px; border: 0; border-radius: 0; }
+.readiness-ring { transform: perspective(150px) rotateX(7deg); box-shadow: inset 0 2px 0 rgba(220,255,251,.22), inset 0 -9px 14px rgba(0,23,42,.42), 0 10px 10px rgba(0,5,21,.45), 0 0 22px rgba(61,222,209,.34); }
+.warning-grid > div > svg, .action-buttons button > svg { filter: drop-shadow(0 0 8px currentColor); box-shadow: inset 0 1px 0 rgba(255,255,255,.2), inset 0 -8px 13px rgba(0,8,32,.5), 0 7px 9px rgba(0,5,20,.45), 0 0 14px currentColor; }
+
+.bucket-list button span, .bucket-list button b, .warehouse-bars header strong, .warehouse-bars footer b { font-size: 10px; font-weight: 700; }
+.bucket-list button small, .bucket-list button em, .warehouse-bars header span, .warehouse-bars footer em { color: #8fb0c8; font-size: 8.5px; font-weight: 600; }
+.distribution-panel > footer span { font-size: 10px; font-weight: 680; }
+.warning-grid small { color: #b7d0e2; font-size: 9px; font-weight: 650; }.warning-grid em { color: #7d9db5; font-size: 8px; font-weight: 600; }
+.owner-head { color: #8bb0cb; font-size: 8px; font-weight: 700; }.owner-row, .owner-row strong, .owner-row small { color: #a9c7db; font-size: 9px; font-weight: 620; }.owner-row strong { color: #d9effb; font-weight: 720; }
+.readiness-list p, .priority-score li, .value-body dt { color: #9bb9ce; font-size: 8.5px; font-weight: 620; }
+.readiness-list > small { color: #7697ae; font-size: 7.5px; }.priority-score > div span { color: #c49558; font-size: 8px; font-weight: 680; }.priority-score li b, .value-body dd { color: #d9f2ff; font-size: 9.5px; font-weight: 720; }
+.action-buttons strong { color: #eff9ff; font-size: 10px; font-weight: 720; }.action-buttons small { color: #87a9bf; font-size: 8px; font-weight: 600; }
+.aging-footer-note { color: #7298b3; font-size: 8px; font-weight: 600; }
+
+/* 1920 × 1080 wallboard visibility pass: stronger hierarchy for bright display environments. */
+.aging-page {
+  --wallboard-copy: #d7ecfa;
+  --wallboard-muted: #a8c8df;
+  --wallboard-bright: #f4fbff;
+}
+.aging-page button,
+.aging-page label,
+.aging-page span,
+.aging-page small,
+.aging-page strong,
+.aging-page b,
+.aging-page em,
+.aging-page dt,
+.aging-page dd {
+  text-shadow: 0 1px 2px rgba(0, 7, 22, .78);
+}
+.panel-number {
+  color: var(--wallboard-bright);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-shadow: 0 0 12px rgba(47, 169, 255, .88), 0 1px 2px rgba(0, 5, 18, .9);
+}
+.panel-heading button,
+.unit-note,
+.source-note {
+  color: #c5e7fb;
+  font-size: 11px;
+  font-weight: 750;
+}
+.aging-version { color: #d7eeff; font-size: 13px; font-weight: 750; }
+.aging-title-block p { color: #9bc6e8; font-size: 12px; font-weight: 700; }
+.aging-live small { color: #a7c7df; font-size: 10px; font-weight: 650; }
+.aging-live small b { color: #d3eafb; font-weight: 750; }
+.aging-live span { color: #e0f5ff; font-size: 10.5px; font-weight: 750; }
+.aging-filters label span { color: #adcbe0; font-size: 10.5px; font-weight: 700; }
+.aging-filters select { color: #e0f1fc; font-size: 11px; font-weight: 680; }
+.aging-date b { color: #d5ecfa; font-size: 10px; font-weight: 720; }
+.aging-kpi span { color: #d2e6f4; font-size: 13px; font-weight: 750; }
+.aging-kpi strong { color: #fff; font-size: 30px; font-weight: 820; }
+.aging-kpi em { color: #c3dded; font-size: 11px; font-weight: 700; }
+.aging-kpi small { color: color-mix(in srgb, var(--tone) 78%, #d7efff); font-size: 11px; font-weight: 700; }
+
+.aging-donut small,
+.aging-donut em { color: #b8d5e8; font-size: 10px; font-weight: 700; }
+.aging-donut strong { color: #f5fbff; font-size: 19px; font-weight: 800; }
+.bucket-list button span,
+.bucket-list button b { color: #d6ebf8; font-size: 12px; font-weight: 750; }
+.bucket-list button span small,
+.bucket-list button em { color: #9fc2da; font-size: 10px; font-weight: 680; }
+.distribution-panel > footer span { color: #9bd6fc; font-size: 11px; font-weight: 750; }
+.distribution-panel > footer b { font-size: 13px; font-weight: 800; }
+
+.risk-table-head { color: #d4ebf8; font-size: 12px; font-weight: 800; }
+.risk-scroll-row { color: #d4e7f2; font-size: 11px; font-weight: 700; }
+.risk-scroll-row strong { color: #f7fcff; font-size: 13px; font-weight: 800; }
+.risk-scroll-row small { color: #abc8da; font-size: 9px; font-weight: 680; }
+.risk-scroll-row b { font-size: 13px; font-weight: 820; }
+.risk-scroll-row .risk-level { min-width: 58px; font-size: 9px; font-weight: 800; }
+
+/* Stretch analytical content to the bottom rail instead of leaving a dead strip. */
+.distribution-panel,
+.warehouse-panel,
+.heat-panel {
+  display: flex;
+  flex-direction: column;
+}
+.distribution-body {
+  min-height: 0;
+  flex: 1;
+}
+.distribution-body .bucket-list {
+  align-self: stretch;
+  grid-template-rows: repeat(6, minmax(0, 1fr));
+}
+.distribution-body .bucket-list button { min-height: 0; }
+.warehouse-bars {
+  min-height: 0;
+  flex: 1;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  align-content: stretch;
+}
+.heat-matrix {
+  min-height: 0;
+  flex: 1;
+  grid-template-rows: repeat(5, minmax(28px, 1fr));
+  align-content: stretch;
+}
+
+/* Center the score in its ellipse and keep its unit/status on the same baseline. */
+.health-label.top {
+  display: grid;
+  width: 194px;
+  height: 92px;
+  grid-template-columns: 1fr;
+  grid-template-rows: 20px 48px;
+  align-content: center;
+  align-items: center;
+  justify-items: center;
+  padding: 8px 12px;
+  overflow: visible;
+}
+.health-glyph {
+  position: absolute;
+  top: 28px;
+  left: 15px;
+  width: 34px;
+  height: 39px;
+}
+.health-caption,
+.health-label.top span {
+  position: static !important;
+  grid-column: 1;
+  grid-row: 1;
+  align-self: center;
+  color: #e1f5ff !important;
+  font-size: 11px !important;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+}
+.health-score-line {
+  display: flex;
+  width: 100%;
+  grid-column: 1;
+  grid-row: 2;
+  align-items: baseline;
+  justify-content: center;
+  gap: 5px;
+  padding-left: 4px;
+}
+.health-score-line strong,
+.health-label.top .health-score-line strong {
+  margin: 0;
+  color: #9beaff;
+  font-size: 42px;
+  font-weight: 850;
+  line-height: 1;
+}
+.health-score-line em,
+.health-label.top .health-score-line em {
+  position: static;
+  margin: 0;
+  color: #8affce;
+  font-size: 10px;
+  font-weight: 780;
+  line-height: 1;
+  white-space: nowrap;
+}
+.health-satellite small { color: #d0e7f6; font-size: 10px; font-weight: 750; }
+.health-satellite strong { font-size: 31px; font-weight: 840; }
+.health-satellite em { color: #b4cfdf; font-size: 10px; font-weight: 750; }
+.health-rule { color: #acd2ec; font-size: 11px; font-weight: 700; }
+.health-rule strong { color: #e0f3ff; font-size: 12px; font-weight: 780; }
+
+.warning-grid small { color: #e0eef6; font-size: 12px; font-weight: 780; }
+.warning-grid strong { font-size: 23px; font-weight: 820; }
+.warning-grid em { color: #b7cfdd; font-size: 10px; font-weight: 700; }
+.warehouse-bars header strong,
+.warehouse-bars footer b { color: #f3fbff; font-size: 14px; font-weight: 800; }
+.warehouse-bars header span,
+.warehouse-bars footer em { color: #c2d9e7; font-size: 12px; font-weight: 700; }
+.heat-matrix > strong,
+.heat-matrix > span,
+.heat-corner { color: #cbe2ef; font-size: 12px; font-weight: 750; }
+.heat-matrix > div:not(.heat-corner) { color: #f3fbff; font-size: 14px; font-weight: 800; }
+.heat-legend span { color: #bfd7e6; font-size: 11px; font-weight: 720; }
+.owner-head { color: #cae2ef; font-size: 12px; font-weight: 780; }
+.owner-row,
+.owner-row small { color: #d4e7f1; font-size: 12px; font-weight: 700; }
+.owner-row strong { color: #f5fbff; font-size: 12.5px; font-weight: 800; }
+
+.readiness-ring strong { font-size: 25px; font-weight: 820; }
+.readiness-ring small { color: #a9c7d9; font-size: 9px; font-weight: 700; }
+.readiness-list p { color: #bed7e6; font-size: 11px; font-weight: 700; }
+.readiness-list p b { color: #8ff1df; font-size: 12px; font-weight: 800; }
+.readiness-list > small { color: #95b5c9; font-size: 8.5px; font-weight: 650; }
+
+/* A horizontal icon/score lockup prevents the P1 label from falling below the card. */
+.priority-score {
+  height: calc(100% - 38px);
+  grid-template-columns: minmax(180px, .95fr) minmax(0, 1.2fr);
+  align-items: stretch;
+  gap: 18px;
+  padding: 8px 18px 10px;
+  overflow: hidden;
+}
+.priority-score > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 64px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-items: center;
+  justify-items: start;
+  column-gap: 13px;
+  row-gap: 4px;
+}
+.priority-score .priority-symbol {
+  grid-column: 1;
+  grid-row: 1 / 3;
+  width: 60px;
+  height: 66px;
+}
+.priority-score > div strong {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  margin: 0;
+  color: #ffd48c;
+  font-size: 34px;
+  font-weight: 850;
+  line-height: 1;
+  text-shadow: 0 0 12px rgba(255, 163, 44, .62), 0 1px 2px #160900;
+}
+.priority-score > div span {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+  margin: 0;
+  color: #ffd79b;
+  font-size: 11px;
+  font-weight: 780;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.priority-score ul { align-self: center; min-width: 0; }
+.priority-score li { color: #bcd7e8; padding-block: 7px; font-size: 11px; font-weight: 700; }
+.priority-score li b { color: #f1f9ff; font-size: 12px; font-weight: 800; }
+
+.value-body dt { color: #b8d4e5; font-size: 11px; font-weight: 700; }
+.value-body dd { color: #90efff; font-size: 13px; font-weight: 800; }
+.aging-footer-note { color: #a8c8dc; font-size: 10px; font-weight: 680; }
+
+/* Original package-search emblem, polished with restrained depth and a scanning highlight. */
+.aging-title-block {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  transform: translate(-50%, -50%);
+}
+.aging-title-block h2 { margin: 0; }
+.aging-emblem {
+  position: absolute;
+  top: 50%;
+  right: calc(100% + 16px);
+  isolation: isolate;
+  overflow: visible;
+  border-color: rgba(103, 210, 255, .9);
+  color: #c7f4ff;
+  background:
+    linear-gradient(145deg, rgba(64, 181, 255, .25), transparent 42%),
+    radial-gradient(circle at 50% 44%, rgba(61, 190, 255, .26), transparent 55%),
+    linear-gradient(145deg, rgba(13, 91, 170, .84), rgba(2, 26, 66, .97));
+  box-shadow:
+    inset 0 1px 0 rgba(224, 251, 255, .52),
+    inset 0 -13px 22px rgba(0, 11, 45, .68),
+    0 8px 14px rgba(0, 5, 27, .58),
+    0 0 21px rgba(38, 168, 255, .55);
+  transform: translateY(-50%);
+}
+.aging-emblem:hover { transform: translateY(-50%) scale(1.04); }
+.aging-emblem::before,
+.aging-emblem::after {
+  position: absolute;
+  content: "";
+  pointer-events: none;
+  clip-path: inherit;
+}
+.aging-emblem::before {
+  z-index: -1;
+  inset: -5px;
+  border: 1px solid rgba(73, 183, 255, .28);
+  opacity: .68;
+}
+.aging-emblem::after {
+  z-index: 3;
+  top: 8px;
+  right: 14px;
+  left: 14px;
+  height: 16px;
+  background: linear-gradient(180deg, rgba(235, 253, 255, .43), transparent);
+  filter: blur(.4px);
+}
+.aging-emblem-frame {
+  position: absolute;
+  z-index: 1;
+  inset: 7px;
+  margin: 0;
+  border: 1px solid rgba(144, 231, 255, .45);
+  background: radial-gradient(circle, rgba(68, 192, 255, .11), transparent 68%);
+  box-shadow: inset 0 0 15px rgba(70, 197, 255, .18), 0 0 8px rgba(55, 181, 255, .22);
+  clip-path: inherit;
+}
+.aging-emblem-icon {
+  position: relative;
+  z-index: 2;
+  color: #d7f8ff;
+  stroke-width: 1.8;
+  filter: drop-shadow(0 0 4px rgba(174, 241, 255, .9)) drop-shadow(0 0 9px rgba(53, 186, 255, .72));
+}
+.aging-emblem-scan {
+  position: absolute;
+  z-index: 4;
+  right: 12px;
+  left: 12px;
+  height: 1px;
+  margin: 0;
+  opacity: .55;
+  background: linear-gradient(90deg, transparent, #d7fbff, transparent);
+  box-shadow: 0 0 6px #49cfff;
+  animation: emblem-scan 3.2s ease-in-out infinite;
+}
+@keyframes emblem-scan {
+  0%, 12% { top: 16px; opacity: 0; }
+  28% { opacity: .9; }
+  72% { opacity: .7; }
+  88%, 100% { top: 48px; opacity: 0; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .aging-page, .aging-hero::after, .aging-emblem, .aging-live span::after, .aging-kpi-icon, .aging-kpi::after,
   .aging-panel::before, .aging-panel::after, .health-core-panel::after, .panel-heading::after, .panel-number::after,
-  .orbit, .orbit::before, .health-label.top, .warehouse-core, .warehouse-core img, .warehouse-scan, .health-satellite,
-  .warehouse-track i::after, .readiness-list > i em::after { animation: none !important; }
+  .orbit, .orbit::before, .health-label.top, .warehouse-core, .warehouse-core img, .warehouse-scan, .health-satellite, .aging-emblem-scan,
+  .warehouse-track i::after, .readiness-list > i em::after, .risk-scroll-track { animation: none !important; }
 }
 </style>
