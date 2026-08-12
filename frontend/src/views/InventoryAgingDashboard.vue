@@ -12,9 +12,7 @@ import {
   Clock3,
   Crosshair,
   Download,
-  Gem,
   PackageOpen,
-  PackageSearch,
   RotateCcw,
   ShieldCheck,
   ShieldAlert,
@@ -23,6 +21,8 @@ import {
 } from 'lucide-vue-next'
 import PageState from '../components/PageState.vue'
 import inventoryHealthWarehouse from '../assets/inventory-health-warehouse-hologram.png'
+import inventoryHealthTitleIcon from '../assets/inventory-aging/inventory-health-title-icon.png'
+import potentialValueIcon from '../assets/inventory-aging/potential-value-icon.png'
 import { registerProjectRefresh } from '../composables/useProjectRefresh'
 import { dashboardApi } from '../services/api'
 
@@ -46,7 +46,22 @@ let simulatedClockTimer = 0
 
 const bucketOrder = ['0-30天', '31-60天', '61-90天', '91-180天', '181-365天', '365天以上']
 const bucketColors = ['#3ca7ff', '#54d9d0', '#8bd45f', '#f3c44f', '#f28a32', '#f05252']
+const warehouseRiskBuckets = [
+  { label: '0-30天', color: '#b8ca48', matches: ['0-30天'] },
+  { label: '31-90天', color: '#79b651', matches: ['31-60天', '61-90天'] },
+  { label: '91-180天', color: '#2f91e7', matches: ['91-180天'] },
+  { label: '181-365天', color: '#f39b2e', matches: ['181-365天'] },
+  { label: '365天以上', color: '#f35b50', matches: ['365天以上'] },
+]
 const levelOrder = ['关注', '预警', '呆滞', '严重呆滞']
+const heatImpactLabels = ['极高', '高', '中', '低', '很低']
+const heatFrequencyLabels = ['很低', '低', '中', '高', '极高']
+const heatLegend = [
+  { label: '高风险 (9-25)', tone: 'critical' },
+  { label: '中高风险 (6-8)', tone: 'high' },
+  { label: '中风险 (3-5)', tone: 'medium' },
+  { label: '低风险 (1-2)', tone: 'low' },
+]
 async function load() {
   loading.value = true
   error.value = ''
@@ -132,21 +147,37 @@ const structureHealth = computed(() => Math.max(0, Math.round(100 - over365Count
 
 const warehouseComparison = computed(() => {
   const names = [...new Set(filteredBatches.value.map((item) => item.warehouseName))]
-  return names.map((name) => {
+  const result = names.map((name, index) => {
     const rows = filteredBatches.value.filter((item) => item.warehouseName === name)
     const total = rows.reduce((sum, item) => sum + Number(item.inventoryAmount || 0), 0)
     const stagnant = rows.filter((item) => item.isStagnant).reduce((sum, item) => sum + Number(item.inventoryAmount || 0), 0)
-    const skuRows = filteredSkus.value.filter((item) => item.warehouseName === name)
     return {
       name,
+      code: warehouseCode(name, index),
       total,
       stagnant,
       ratio: total ? stagnant / total : 0,
-      severe: skuRows.filter((item) => item.stagnantLevel === '严重呆滞').length,
-      health: Math.max(30, Math.round(100 - (total ? stagnant / total : 0) * 360 - skuRows.filter((item) => item.stagnantLevel === '严重呆滞').length * 1.5)),
+      segments: warehouseRiskBuckets.map((bucket) => ({
+        ...bucket,
+        amount: rows.filter((item) => bucket.matches.includes(item.ageBucket)).reduce((sum, item) => sum + Number(item.inventoryAmount || 0), 0),
+      })),
     }
-  }).sort((a, b) => b.ratio - a.ratio)
+  }).sort((a, b) => b.stagnant - a.stagnant)
+  const maxTotal = Math.max(1, ...result.map((item) => item.total))
+  return result.map((item) => ({ ...item, scale: item.total / maxTotal }))
 })
+
+function warehouseCode(name, index) {
+  const text = String(name || '').toUpperCase()
+  const latin = text.match(/[A-Z]{2,3}/)?.[0]
+  if (latin) return latin
+  if (text.includes('原料')) return 'RM'
+  if (text.includes('成品')) return 'FG'
+  if (text.includes('包装') || text.includes('包材')) return 'PK'
+  if (text.includes('五金')) return 'WH'
+  if (text.includes('备品') || text.includes('辅料')) return 'SP'
+  return `W${index + 1}`
+}
 
 function ageBucketFor(value) {
   const days = Number(value || 0)
@@ -176,20 +207,42 @@ const riskTickerStyle = computed(() => {
   const rowCount = Math.min(riskRows.value.length, 12)
   return {
     '--risk-row-count': rowCount,
+    '--risk-row-height': '42px',
     '--risk-scroll-duration': `${Math.max(18, rowCount * 2.4)}s`,
   }
 })
 
 const heatCells = computed(() => {
-  const names = [...new Set(filteredSkus.value.map((item) => item.warehouseName))]
-  const values = names.flatMap((warehouse) => levelOrder.map((level) => ({
-    warehouse,
-    level,
-    count: filteredSkus.value.filter((item) => item.warehouseName === warehouse && item.stagnantLevel === level).length,
-  })))
-  const max = Math.max(1, ...values.map((item) => item.count))
-  return { names, max, values }
+  const amounts = filteredSkus.value.map((item) => Number(item.stagnantInventoryAmount || 0)).sort((a, b) => a - b)
+  const maxAmount = Math.max(1, amounts.at(-1) || 0)
+  const cells = Array.from({ length: 25 }, (_, index) => ({
+    impact: 4 - Math.floor(index / 5),
+    frequency: index % 5,
+    count: 0,
+  }))
+  filteredSkus.value.forEach((item) => {
+    const amount = Number(item.stagnantInventoryAmount || 0)
+    const score = Math.max(0, Math.min(100, Number(item.stagnantScore || 0)))
+    const impact = Math.max(0, Math.min(4, Math.ceil(amount / maxAmount * 5) - 1))
+    const frequency = Math.max(0, Math.min(4, Math.floor(score / 20)))
+    const cell = cells.find((entry) => entry.impact === impact && entry.frequency === frequency)
+    if (cell) cell.count += 1
+  })
+  const max = Math.max(1, ...cells.map((item) => item.count))
+  return cells.map((item) => ({
+    ...item,
+    score: (item.impact + 1) * (item.frequency + 1),
+    tone: heatTone((item.impact + 1) * (item.frequency + 1)),
+    isPeak: item.count > 0 && item.count === max,
+  }))
 })
+
+function heatTone(score) {
+  if (score >= 9) return 'critical'
+  if (score >= 6) return 'high'
+  if (score >= 3) return 'medium'
+  return 'low'
+}
 
 const ownerRows = computed(() => {
   const groups = new Map()
@@ -205,6 +258,21 @@ const ownerRows = computed(() => {
   })
   return [...groups.values()].sort((a, b) => b.p1 - a.p1 || b.tasks - a.tasks)
 })
+
+const ownerTickerRows = computed(() => {
+  const rows = ownerRows.value
+  const tickerRows = rows.length > 3 ? [...rows, ...rows] : rows
+  return tickerRows.map((item, index) => ({
+    ...item,
+    tickerKey: `${item.owner}-${index}`,
+  }))
+})
+
+const ownerTickerStyle = computed(() => ({
+  '--owner-row-count': ownerRows.value.length,
+  '--owner-row-height': '36px',
+  '--owner-scroll-duration': `${Math.max(20, ownerRows.value.length * 3)}s`,
+}))
 
 const p1Count = computed(() => stagnantSkus.value.filter((item) => item.priority === 'P1-高').length)
 const p2Count = computed(() => stagnantSkus.value.filter((item) => item.priority === 'P2-中').length)
@@ -283,9 +351,7 @@ function exportRiskList() {
       <header class="aging-hero">
         <div class="aging-title-block">
           <button type="button" class="aging-emblem" aria-label="打开系统导航" title="打开系统导航" @click="openNavigation">
-            <span class="aging-emblem-frame" aria-hidden="true" />
-            <PackageSearch class="aging-emblem-icon" :size="31" :stroke-width="1.8" />
-            <span class="aging-emblem-scan" aria-hidden="true" />
+            <img :src="inventoryHealthTitleIcon" alt="" />
           </button>
           <div><h2>库存健康与呆滞管理</h2></div>
         </div>
@@ -350,7 +416,11 @@ function exportRiskList() {
             <article class="aging-panel health-core-panel">
               <div class="health-label top"><i class="health-glyph"><ShieldCheck :size="21" /></i><span class="health-caption">库存健康指数</span><div class="health-score-line"><strong>{{ healthScore }}</strong><em>分 · {{ healthLabel }}</em></div></div>
               <div class="health-stage">
+                <div class="planetary-field" aria-hidden="true"><i /><i /><i /><i /><span /><span /><span /></div>
+                <div class="health-field-lines" aria-hidden="true"><i /><i /><i /><i /></div>
                 <div class="orbit orbit-a" /><div class="orbit orbit-b" /><div class="orbit orbit-c" />
+                <div class="health-cylinder" aria-hidden="true"><i /><span /></div>
+                <div class="health-link link-left" aria-hidden="true" /><div class="health-link link-right" aria-hidden="true" /><div class="health-link link-bottom" aria-hidden="true" />
                 <div class="warehouse-core">
                   <img :src="inventoryHealthWarehouse" width="1254" height="1254" decoding="async" alt="透明全息立体仓储货架与库存托盘" />
                   <span class="warehouse-scan" aria-hidden="true" />
@@ -373,35 +443,46 @@ function exportRiskList() {
 
           <div class="aging-column right-column">
             <article class="aging-panel warehouse-panel">
-              <header class="panel-heading"><span class="panel-number">仓库风险对比</span><span class="unit-note">金额单位：万元</span></header>
+              <header class="panel-heading"><span class="panel-number">仓库风险对比</span><span class="unit-note">查看全部 ›</span></header>
               <div class="warehouse-bars">
-                <div v-for="item in warehouseComparison" :key="item.name">
-                  <header><strong>{{ item.name }}</strong><span>健康 {{ item.health }}分 · 严重 {{ item.severe }}项</span></header>
-                  <div class="warehouse-track"><i :style="{ width: `${Math.max(2, item.ratio * 100)}%` }" /></div>
-                  <footer><b>{{ compactMoney(item.stagnant) }}</b><em>呆滞占比 {{ percent(item.ratio) }}</em></footer>
+                <header class="warehouse-table-head"><span>金额(万元)</span><b>呆滞金额</b><b>呆滞占比</b></header>
+                <div v-for="item in warehouseComparison" :key="item.name" class="warehouse-risk-row">
+                  <div class="warehouse-identity"><strong>{{ item.code }}</strong><span>{{ item.name }}</span></div>
+                  <div class="warehouse-track" :aria-label="`${item.name}库龄金额分布`">
+                    <i v-for="segment in item.segments" :key="segment.label" :title="`${segment.label} ${compactMoney(segment.amount)}`" :style="{ width: `${item.total ? segment.amount / item.total * item.scale * 100 : 0}%`, background: segment.color }" />
+                  </div>
+                  <b class="warehouse-stagnant">{{ moneyWan(item.stagnant) }}</b>
+                  <em>{{ percent(item.ratio) }}</em>
                 </div>
+                <footer class="warehouse-legend"><span v-for="bucket in warehouseRiskBuckets" :key="bucket.label"><i :style="{ background: bucket.color }" />{{ bucket.label }}</span></footer>
               </div>
             </article>
 
             <article class="aging-panel heat-panel">
               <header class="panel-heading"><span class="panel-number">风险热力矩阵</span></header>
-              <div class="heat-matrix" :style="{ '--columns': heatCells.names.length }">
-                <div class="heat-corner">等级</div><strong v-for="name in heatCells.names" :key="name">{{ name }}</strong>
-                <template v-for="level in levelOrder" :key="level">
-                  <span>{{ level }}</span>
-                  <div v-for="name in heatCells.names" :key="`${level}-${name}`" :class="`heat-${levelClass(level)}`" :style="{ '--intensity': (heatCells.values.find((item) => item.level === level && item.warehouse === name)?.count || 0) / heatCells.max }">
-                    {{ heatCells.values.find((item) => item.level === level && item.warehouse === name)?.count || 0 }}
+              <div class="risk-heat-layout">
+                <div class="risk-heat-y-title">影响程度</div>
+                <div class="risk-heat-y-labels"><span v-for="label in heatImpactLabels" :key="label">{{ label }}</span></div>
+                <div class="risk-heat-grid">
+                  <div v-for="cell in heatCells" :key="`${cell.impact}-${cell.frequency}`" :class="[`risk-cell-${cell.tone}`, { 'is-peak': cell.isPeak }]">
+                    <strong v-if="cell.count">{{ cell.count }}</strong>
                   </div>
-                </template>
+                </div>
+                <aside class="risk-heat-legend"><span v-for="item in heatLegend" :key="item.label"><i :class="`risk-cell-${item.tone}`" />{{ item.label }}</span></aside>
+                <div class="risk-heat-x-labels"><span v-for="label in heatFrequencyLabels" :key="label">{{ label }}</span></div>
+                <div class="risk-heat-x-title">发生频率 →</div>
               </div>
-              <div class="heat-legend"><span><i class="low" />低</span><span><i class="mid" />中</span><span><i class="high" />高</span></div>
             </article>
 
             <article id="aging-owners" class="aging-panel owner-panel">
               <header class="panel-heading"><span class="panel-number">责任人任务跟进</span><span class="source-note">处置台账</span></header>
               <div class="owner-table">
                 <div class="owner-head"><span>责任人</span><span>待处置</span><span>P1 高</span><span>严重</span><span>涉及金额</span></div>
-                <div v-for="item in ownerRows" :key="item.owner" class="owner-row"><strong><UserRoundCheck :size="14" /> {{ item.owner }}</strong><span>{{ item.tasks }}</span><b>{{ item.p1 }}</b><em>{{ item.severe }}</em><small>{{ compactMoney(item.amount) }}</small></div>
+                <div class="owner-scroll-viewport">
+                  <div class="owner-scroll-track" :class="{ 'is-scrolling': ownerRows.length > 3 }" :style="ownerTickerStyle">
+                    <div v-for="item in ownerTickerRows" :key="item.tickerKey" class="owner-row"><strong><UserRoundCheck :size="16" /> {{ item.owner }}</strong><span>{{ item.tasks }}</span><b>{{ item.p1 }}</b><em>{{ item.severe }}</em><small>{{ compactMoney(item.amount) }}</small></div>
+                  </div>
+                </div>
               </div>
             </article>
           </div>
@@ -420,7 +501,7 @@ function exportRiskList() {
 
           <article class="aging-panel value-panel">
             <header class="panel-heading compact"><span class="panel-number">潜在价值挖掘</span></header>
-            <div class="value-body"><div class="tech-symbol value-gem"><Gem :size="34" /></div><dl><div><dt>可优先去化金额</dt><dd>{{ compactMoney(p1Amount) }}</dd></div><div><dt>全部呆滞金额</dt><dd>{{ compactMoney(stagnantAmount) }}</dd></div><div><dt>可推动处置 SKU</dt><dd>{{ stagnantSkus.length }} 个</dd></div></dl></div>
+            <div class="value-body"><div class="value-gem"><img :src="potentialValueIcon" alt="" /></div><dl><div><dt>可优先去化金额</dt><dd>{{ compactMoney(p1Amount) }}</dd></div><div><dt>全部呆滞金额</dt><dd>{{ compactMoney(stagnantAmount) }}</dd></div><div><dt>可推动处置 SKU</dt><dd>{{ stagnantSkus.length }} 个</dd></div></dl></div>
           </article>
 
         </section>
@@ -544,6 +625,7 @@ function exportRiskList() {
 .aging-secondary-grid { display: grid; grid-template-columns: .95fr .78fr .88fr 1.4fr; gap: 10px; margin-top: 10px; }.aging-secondary-grid .aging-panel { min-height: 150px; }.panel-heading.compact { min-height: 38px; }.readiness-body { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 12px; padding: 10px 14px; }.readiness-ring { --progress: 0deg; position: relative; display: grid; width: 78px; height: 78px; place-items: center; border-radius: 50%; background: conic-gradient(#43d9cf var(--progress), rgba(47,95,125,.34) 0); }.readiness-ring::before { position: absolute; inset: 8px; border-radius: 50%; content: ""; background: #061a34; }.readiness-ring span { position: relative; z-index: 1; text-align: center; }.readiness-ring strong { display: block; color: #6be4d5; font: 710 20px/1 "Bahnschrift", sans-serif; }.readiness-ring small { display: block; margin-top: 4px; color: #6989a2; font-size: 6px; }.readiness-list p { display: flex; justify-content: space-between; margin: 4px 0; color: #7796ad; font-size: 7px; }.readiness-list p b { color: #79d8cb; }.readiness-list > i { display: block; height: 3px; overflow: hidden; background: rgba(51,98,130,.35); }.readiness-list > i em { display: block; height: 100%; background: linear-gradient(90deg, #229ed1, #53dcb8); }.readiness-list > small { display: block; margin-top: 7px; color: #566f83; font-size: 6px; }
 .priority-score { display: grid; grid-template-columns: .85fr 1.15fr; align-items: center; padding: 12px 14px; }.priority-score > div { display: grid; place-items: center; color: #f29c3d; }.priority-score > div strong { margin-top: 4px; color: #ffc26c; font: 730 25px/1 "Bahnschrift", sans-serif; }.priority-score > div span { margin-top: 4px; color: #8b745c; font-size: 6px; }.priority-score ul { margin: 0; padding: 0; list-style: none; }.priority-score li { display: flex; justify-content: space-between; padding: 5px 0; border-bottom: 1px solid rgba(61,128,180,.12); color: #718ea4; font-size: 7px; }.priority-score li b { color: #b9d8e9; }
 .value-body { display: grid; grid-template-columns: 94px 1fr; align-items: center; padding: 10px 14px; }.value-gem { display: grid; width: 72px; height: 72px; place-items: center; border: 1px solid rgba(58,195,229,.43); color: #54d6ed; background: radial-gradient(circle, rgba(29,159,205,.27), rgba(5,31,62,.68)); box-shadow: inset 0 0 18px rgba(49,192,225,.18), 0 0 14px rgba(45,178,221,.14); clip-path: polygon(50% 0, 90% 25%, 78% 84%, 50% 100%, 22% 84%, 10% 25%); }.value-body dl { margin: 0; }.value-body dl div { display: flex; justify-content: space-between; gap: 8px; padding: 5px 0; border-bottom: 1px solid rgba(60,128,181,.12); }.value-body dt { color: #6f8ea5; font-size: 7px; }.value-body dd { margin: 0; color: #70d8e9; font: 650 8px "Bahnschrift", sans-serif; }
+.value-gem img { display: block; width: 100%; height: 100%; object-fit: contain; }
 .action-buttons { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; padding: 12px; }.action-buttons button { display: flex; min-width: 0; min-height: 78px; align-items: center; justify-content: center; gap: 8px; cursor: pointer; border: 1px solid rgba(56,145,215,.25); color: #59bfe7; background: rgba(13,61,101,.22); }.action-buttons button:hover { border-color: rgba(73,185,255,.52); background: rgba(20,89,145,.28); }.action-buttons button:nth-child(1) { color: #ec7a65; border-color: rgba(220,83,63,.27); }.action-buttons button:nth-child(2) { color: #e0b557; }.action-buttons button:nth-child(3) { color: #61d7b3; }.action-buttons span { display: flex; min-width: 0; flex-direction: column; text-align: left; }.action-buttons strong { color: #bedbea; font-size: 8px; }.action-buttons small { margin-top: 4px; overflow: hidden; color: #587990; font-size: 6px; text-overflow: ellipsis; white-space: nowrap; }
 .aging-footer-note { display: flex; min-height: 32px; align-items: center; justify-content: center; gap: 7px; margin-top: 10px; border: 1px solid rgba(51,128,190,.18); color: #577995; font-size: 7px; background: rgba(5,28,53,.66); }
 @keyframes aging-live { 0%, 100% { opacity: .5; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.1); } }
@@ -870,8 +952,8 @@ function exportRiskList() {
 .orbit-b::before { animation-duration: 7.2s; animation-direction: reverse; }
 .orbit-c::before { animation-duration: 4.6s; }
 .health-label.top { animation: health-beacon 3.1s ease-in-out infinite; }
-.warehouse-core { animation: warehouse-hover 4.8s ease-in-out infinite; }
-.warehouse-core img { animation: warehouse-luminance 4.8s ease-in-out infinite; }
+.warehouse-core { animation: warehouse-hover 7.2s ease-in-out infinite; }
+.warehouse-core img { animation: warehouse-luminance 7.2s ease-in-out infinite; }
 .warehouse-scan { position: absolute; z-index: 3; top: 17%; right: 20%; left: 20%; height: 2px; pointer-events: none; opacity: 0; background: linear-gradient(90deg, transparent, rgba(117,229,255,.96), transparent); box-shadow: 0 0 8px rgba(75,190,255,.9), 0 8px 22px rgba(37,145,255,.35); animation: warehouse-scan 3.6s cubic-bezier(.45,0,.55,1) infinite; }
 .health-satellite { animation: satellite-signal 4s ease-in-out infinite; }
 .satellite-right { animation-delay: -1.3s; }.satellite-bottom { animation-delay: -2.6s; }
@@ -889,7 +971,7 @@ function exportRiskList() {
 @keyframes number-flash { 0%, 48% { left: -70%; opacity: 0; } 58% { opacity: 1; } 72%, 100% { left: 130%; opacity: 0; } }
 @keyframes orbit-energy { to { transform: rotate(360deg); } }
 @keyframes health-beacon { 0%, 100% { box-shadow: inset 0 0 17px rgba(50,163,255,.2), 0 0 13px rgba(43,155,255,.18); } 50% { box-shadow: inset 0 0 25px rgba(73,190,255,.35), 0 0 27px rgba(43,155,255,.36); } }
-@keyframes warehouse-hover { 0%, 100% { margin-top: 3px; } 50% { margin-top: -4px; } }
+@keyframes warehouse-hover { 0%, 100% { margin-top: 3px; } 50% { margin-top: -16px; } }
 @keyframes warehouse-luminance { 0%, 100% { filter: saturate(1.05) contrast(1.04) brightness(.94); } 50% { filter: saturate(1.2) contrast(1.08) brightness(1.08); } }
 @keyframes warehouse-scan { 0%, 12% { top: 17%; opacity: 0; } 25% { opacity: 1; } 72% { opacity: .8; } 88%, 100% { top: 79%; opacity: 0; } }
 @keyframes satellite-signal { 0%, 100% { filter: brightness(.92); } 50% { filter: brightness(1.13); } }
@@ -949,7 +1031,7 @@ function exportRiskList() {
 .risk-scroll-row small { margin-top: 1px; color: #7198b6; font-size: 7px; font-weight: 560; }
 .risk-scroll-row b { color: #ffc15f; font-size: 10px; text-shadow: 0 0 7px rgba(255,162,52,.42); }
 .risk-scroll-row .risk-level { min-width: 49px; padding: 3px 5px; font-size: 7px; font-style: normal; font-weight: 720; box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 0 8px currentColor; }
-@keyframes risk-ticker { to { transform: translateY(calc(var(--risk-row-count) * -32px)); } }
+@keyframes risk-ticker { to { transform: translateY(calc(var(--risk-row-count) * var(--risk-row-height, 42px) * -1)); } }
 
 .health-core-panel {
   background:
@@ -981,7 +1063,9 @@ function exportRiskList() {
 .tech-symbol::before { position: absolute; inset: 7px; border: 1px solid currentColor; content: ""; opacity: .5; clip-path: inherit; }
 .tech-symbol svg { position: relative; z-index: 1; filter: drop-shadow(0 0 7px currentColor); }
 .priority-symbol { color: #ffb443; background: linear-gradient(145deg, rgba(255,172,54,.32), rgba(48,22,3,.92)); box-shadow: inset 0 2px 0 rgba(255,240,196,.22), inset 0 -13px 18px rgba(25,7,0,.62), 0 10px 10px rgba(0,5,21,.5), 0 0 20px rgba(255,151,38,.38); }
-.value-gem { width: 62px; height: 68px; border: 0; border-radius: 0; }
+.value-body { grid-template-columns: 116px 1fr; }
+.value-gem { display: grid; width: 108px; height: 104px; overflow: hidden; place-items: center; align-self: center; justify-self: center; border: 0; border-radius: 0; background: transparent; box-shadow: none; clip-path: none; transform: translateX(-12px); }
+.value-gem::before, .value-gem::after { display: none; content: none; }
 .readiness-ring { transform: perspective(150px) rotateX(7deg); box-shadow: inset 0 2px 0 rgba(220,255,251,.22), inset 0 -9px 14px rgba(0,23,42,.42), 0 10px 10px rgba(0,5,21,.45), 0 0 22px rgba(61,222,209,.34); }
 .warning-grid > div > svg, .action-buttons button > svg { filter: drop-shadow(0 0 8px currentColor); box-shadow: inset 0 1px 0 rgba(255,255,255,.2), inset 0 -8px 13px rgba(0,8,32,.5), 0 7px 9px rgba(0,5,20,.45), 0 0 14px currentColor; }
 
@@ -1259,6 +1343,7 @@ function exportRiskList() {
   transform: translateY(-50%);
 }
 .aging-emblem:hover { transform: translateY(-50%) scale(1.04); }
+.aging-emblem > img { position: absolute; z-index: 2; inset: -7px; width: calc(100% + 14px); height: calc(100% + 14px); max-width: none; object-fit: contain; filter: drop-shadow(0 0 7px rgba(70, 181, 255, .48)); }
 .aging-emblem::before,
 .aging-emblem::after {
   position: absolute;
@@ -1310,6 +1395,659 @@ function exportRiskList() {
   box-shadow: 0 0 6px #49cfff;
   animation: emblem-scan 3.2s ease-in-out infinite;
 }
+.aging-emblem { border: 0; background: transparent; box-shadow: none; clip-path: none; filter: none; animation: none; }
+.aging-emblem::before, .aging-emblem::after { display: none; content: none; }
+
+/* Compact stacked aging comparison, matched to the reference warehouse-risk panel. */
+.warehouse-panel .panel-heading .unit-note { color: #a9c8dc; font-size: 10px; cursor: default; }
+.warehouse-bars {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  padding: 7px 10px 5px;
+}
+.warehouse-table-head,
+.warehouse-risk-row {
+  display: grid;
+  grid-template-columns: minmax(92px, .9fr) minmax(105px, 1.35fr) 64px 60px;
+  align-items: center;
+  column-gap: 8px;
+}
+.warehouse-table-head { min-height: 20px; flex: 0 0 20px; color: #8eabc0; font-size: 10px; font-weight: 750; }
+.warehouse-table-head span { grid-column: 1 / 3; }
+.warehouse-table-head b { color: #9db8cb; font-size: 10px; text-align: center; }
+.warehouse-risk-row { min-height: 30px; flex: 1 1 30px; }
+.warehouse-identity { display: flex; min-width: 0; align-items: center; gap: 7px; }
+.warehouse-identity strong {
+  display: grid;
+  width: 31px;
+  height: 25px;
+  flex: 0 0 31px;
+  place-items: center;
+  border-radius: 3px;
+  color: #dffbff;
+  font: 800 11px/1 "Bahnschrift", sans-serif;
+  background: linear-gradient(135deg, #12b599, #2585d9);
+  box-shadow: inset 0 0 9px rgba(154, 255, 239, .22), 0 0 7px rgba(42, 188, 255, .2);
+}
+.warehouse-risk-row:nth-of-type(4n) .warehouse-identity strong { background: linear-gradient(135deg, #df8d30, #e04f43); }
+.warehouse-risk-row:nth-of-type(5n) .warehouse-identity strong { background: linear-gradient(135deg, #35a7a0, #3f76c7); }
+.warehouse-identity span { overflow: hidden; color: #d6e8f3; font-size: 11px; font-weight: 740; text-overflow: ellipsis; white-space: nowrap; }
+.warehouse-risk-row .warehouse-track {
+  display: flex;
+  width: 100%;
+  height: 19px;
+  overflow: hidden;
+  border: 1px solid rgba(54, 137, 207, .32);
+  border-radius: 1px;
+  background: rgba(17, 58, 104, .68);
+  box-shadow: inset 0 0 8px rgba(20, 94, 169, .36);
+}
+.warehouse-risk-row .warehouse-track i { min-width: 0; height: 100%; box-shadow: inset -1px 0 rgba(255,255,255,.12), 0 0 6px currentColor; }
+.warehouse-stagnant { color: #eaf7ff; font: 800 12px/1 "Bahnschrift", sans-serif; text-align: center; }
+.warehouse-risk-row > em { color: #eaf7ff; font: normal 800 11px/1 "Bahnschrift", sans-serif; text-align: center; }
+.warehouse-legend { display: flex; min-height: 24px; flex: 0 0 24px; align-items: center; justify-content: space-between; gap: 7px; margin-top: 2px; padding-top: 3px; border-top: 1px solid rgba(60, 143, 207, .18); }
+.warehouse-legend span { display: inline-flex; align-items: center; gap: 4px; color: #a9c3d5; font-size: 8px; font-weight: 700; white-space: nowrap; }
+.warehouse-legend i { width: 8px; height: 8px; flex: 0 0 8px; border-radius: 50%; box-shadow: 0 0 5px currentColor; }
+
+/* Higher-legibility spacing for the high-risk material ticker. */
+.risk-table-head { height: 31px; flex-basis: 31px; padding-inline: 10px; font-size: 13px; }
+.risk-table-head,
+.risk-scroll-row { column-gap: 8px; }
+.risk-scroll-row {
+  height: var(--risk-row-height, 42px);
+  padding: 4px 10px;
+  border-bottom-color: rgba(83, 159, 216, .24);
+  color: #deedf6;
+  font-size: 12px;
+  line-height: 1.2;
+}
+.risk-scroll-row strong { font-size: 14px; line-height: 1.15; }
+.risk-scroll-row small { margin-top: 3px; font-size: 10px; line-height: 1.1; }
+.risk-scroll-row b { font-size: 14px; }
+.risk-scroll-row .risk-level { min-width: 64px; padding: 4px 7px; font-size: 10px; }
+
+/* Five-by-five impact/frequency heat map matched to the reference cockpit. */
+.risk-heat-layout {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  height: calc(100% - 34px);
+  grid-template-columns: 23px 30px minmax(255px, 1.78fr) minmax(100px, .52fr);
+  grid-template-rows: minmax(0, 1fr) 22px 17px;
+  gap: 3px 5px;
+  align-items: stretch;
+  padding: 5px 5px 3px;
+  transform: translateY(5px);
+}
+.heat-panel { display: flex; flex-direction: column; }
+.heat-panel > .panel-heading { flex: 0 0 34px; }
+.heat-panel > .risk-heat-layout { flex: 1; }
+.risk-heat-y-title {
+  display: grid;
+  grid-row: 1;
+  place-items: center;
+  color: #a9c5d9;
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1.2;
+  writing-mode: vertical-rl;
+  letter-spacing: .18em;
+}
+.risk-heat-y-title::after { margin-top: 3px; color: #6d94b2; content: "↓"; }
+.risk-heat-y-labels { display: grid; grid-row: 1; grid-template-rows: repeat(5, 1fr); }
+.risk-heat-y-labels span { display: grid; place-items: center; color: #a9c2d4; font-size: 11px; font-weight: 740; }
+.risk-heat-grid {
+  display: grid;
+  grid-row: 1;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(5, 1fr);
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid rgba(75, 157, 215, .22);
+  background: rgba(3, 23, 51, .6);
+  box-shadow: inset 0 0 16px rgba(22, 103, 184, .15);
+}
+.risk-heat-grid > div {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.16);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), inset 0 0 12px rgba(0,0,0,.14);
+}
+.risk-cell-low { background: linear-gradient(145deg, #267a51, #17603f); }
+.risk-cell-medium { background: linear-gradient(145deg, #efbd3d, #c88b26); }
+.risk-cell-high { background: linear-gradient(145deg, #f47b28, #cf4f24); }
+.risk-cell-critical { background: linear-gradient(145deg, #eb4d3f, #ba2f35); }
+.risk-heat-grid strong { position: relative; z-index: 2; color: #fff; font: 850 14px/1 "Bahnschrift", sans-serif; text-shadow: 0 0 7px rgba(0,0,0,.65); }
+.risk-heat-grid .is-peak::after {
+  position: absolute;
+  z-index: 1;
+  width: 31px;
+  height: 31px;
+  border: 2px solid #fff1e8;
+  border-radius: 50% 50% 50% 12%;
+  content: "";
+  box-shadow: 0 0 8px #ff483d, inset 0 0 9px rgba(255,52,43,.45);
+  transform: rotate(-45deg);
+}
+.risk-heat-legend {
+  display: flex;
+  grid-row: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+  padding: 8px 4px 8px 7px;
+  border: 1px solid rgba(49, 131, 197, .33);
+  background: rgba(4, 29, 62, .62);
+}
+.risk-heat-legend span { display: flex; align-items: center; gap: 8px; color: #c7dce9; font-size: 10px; font-weight: 720; white-space: nowrap; }
+.risk-heat-legend i { width: 15px; height: 15px; flex: 0 0 15px; border: 1px solid rgba(255,255,255,.18); }
+.risk-heat-x-labels { display: grid; grid-column: 3; grid-row: 2; grid-template-columns: repeat(5, 1fr); }
+.risk-heat-x-labels span { display: grid; place-items: center; color: #a9c2d4; font-size: 11px; font-weight: 740; }
+.risk-heat-x-title { grid-column: 3; grid-row: 3; align-self: start; justify-self: center; color: #9ab8cc; font-size: 10px; font-weight: 740; text-align: center; letter-spacing: .08em; transform: translateY(-2px); }
+
+/* Roomier owner follow-up rows with a seamless vertical ticker for larger datasets. */
+.owner-table {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  padding: 5px 12px 7px;
+}
+.owner-head,
+.owner-row {
+  grid-template-columns: minmax(78px, 1.45fr) .68fr .58fr .7fr minmax(72px, 1.05fr);
+  column-gap: 10px;
+  padding-inline: 7px;
+}
+.owner-head {
+  min-height: 30px;
+  flex: 0 0 30px;
+  color: #d8edf8;
+  font-size: 12.5px;
+  line-height: 1;
+}
+.owner-scroll-viewport {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent 0, #000 8%, #000 92%, transparent 100%);
+}
+.owner-scroll-track { will-change: transform; }
+.owner-scroll-track.is-scrolling { animation: owner-ticker var(--owner-scroll-duration) linear infinite; }
+.owner-scroll-viewport:hover .owner-scroll-track { animation-play-state: paused; }
+.owner-row {
+  height: var(--owner-row-height, 36px);
+  min-height: var(--owner-row-height, 36px);
+  border-bottom-color: rgba(83, 159, 216, .23);
+  color: #deedf6;
+  font-size: 13px;
+  line-height: 1.15;
+  background: linear-gradient(90deg, rgba(21, 92, 151, .13), transparent 76%);
+}
+.owner-row:nth-child(2n) { background: linear-gradient(90deg, rgba(31, 119, 184, .17), rgba(4, 29, 61, .04)); }
+.owner-row strong { gap: 6px; color: #f6fcff; font-size: 13.5px; }
+.owner-row small { color: #a9d8f1; font-size: 12.5px; }
+.owner-row b { color: #ffc15f; text-shadow: 0 0 7px rgba(255, 162, 52, .4); }
+.owner-row em { color: #ff766e; text-shadow: 0 0 7px rgba(255, 79, 73, .35); }
+@keyframes owner-ticker {
+  to { transform: translateY(calc(var(--owner-row-count) * var(--owner-row-height, 36px) * -1)); }
+}
+
+/* Glass-cylinder health core: the score and warehouse read as one instrument. */
+.health-core-panel {
+  isolation: isolate;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 74% 50% at 50% 57%, rgba(8, 105, 211, .28), transparent 69%),
+    radial-gradient(circle at 50% 48%, rgba(32, 141, 242, .18), transparent 37%),
+    linear-gradient(180deg, rgba(3, 25, 54, .99), rgba(1, 13, 31, .99));
+}
+.health-core-panel::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  opacity: .78;
+  background:
+    linear-gradient(90deg, transparent 49.82%, rgba(93, 190, 255, .12) 50%, transparent 50.18%),
+    linear-gradient(0deg, transparent 49.82%, rgba(93, 190, 255, .08) 50%, transparent 50.18%),
+    repeating-radial-gradient(ellipse at 50% 59%, transparent 0 42px, rgba(42, 139, 224, .12) 43px 44px, transparent 45px 66px);
+  mask-image: radial-gradient(ellipse 82% 72% at 50% 56%, #000 34%, rgba(0,0,0,.68) 69%, transparent 96%);
+}
+.health-stage { isolation: isolate; }
+.health-field-lines {
+  position: absolute;
+  z-index: 0;
+  inset: 1% 2% 2%;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: .78;
+}
+.health-field-lines::before,
+.health-field-lines::after {
+  position: absolute;
+  top: 55%;
+  left: 50%;
+  width: 96%;
+  height: 54%;
+  border: 1px solid rgba(48, 156, 244, .18);
+  border-radius: 50%;
+  content: "";
+  transform: translate(-50%, -50%) rotate(-4deg);
+  box-shadow: inset 0 0 22px rgba(36, 139, 231, .12), 0 0 17px rgba(23, 115, 210, .12);
+}
+.health-field-lines::after { width: 83%; height: 44%; border-style: dashed; transform: translate(-50%, -50%) rotate(5deg); }
+.health-field-lines i {
+  position: absolute;
+  top: 55%;
+  left: 50%;
+  width: 88%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(70, 174, 252, .2) 22%, rgba(131, 222, 255, .48) 50%, rgba(70, 174, 252, .2) 78%, transparent);
+  transform-origin: center;
+}
+.health-field-lines i:nth-child(1) { transform: translate(-50%, -50%) rotate(14deg); }
+.health-field-lines i:nth-child(2) { transform: translate(-50%, -50%) rotate(-14deg); }
+.health-field-lines i:nth-child(3) { transform: translate(-50%, -50%) rotate(31deg) scaleX(.82); }
+.health-field-lines i:nth-child(4) { transform: translate(-50%, -50%) rotate(-31deg) scaleX(.82); }
+.health-cylinder {
+  position: absolute;
+  z-index: 3;
+  top: 10px;
+  bottom: 16%;
+  left: 50%;
+  width: clamp(220px, 45%, 282px);
+  border-right: 1px solid rgba(88, 197, 255, .48);
+  border-left: 1px solid rgba(88, 197, 255, .48);
+  background:
+    linear-gradient(90deg, rgba(38, 146, 237, .03), rgba(112, 218, 255, .1) 47%, rgba(166, 235, 255, .13) 50%, rgba(50, 159, 242, .05) 72%, transparent),
+    linear-gradient(180deg, rgba(49, 160, 249, .1), transparent 18% 72%, rgba(31, 128, 226, .09));
+  box-shadow: inset 19px 0 28px rgba(23, 117, 211, .08), inset -19px 0 28px rgba(50, 165, 250, .07), 0 0 35px rgba(28, 135, 231, .12);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+.health-cylinder::before,
+.health-cylinder::after,
+.health-cylinder > i,
+.health-cylinder > span {
+  position: absolute;
+  left: 50%;
+  width: calc(100% + 2px);
+  height: 54px;
+  border: 2px solid rgba(106, 216, 255, .78);
+  border-radius: 50%;
+  content: "";
+  transform: translateX(-50%);
+}
+.health-cylinder::before { top: -27px; background: radial-gradient(ellipse, rgba(71, 184, 255, .12), rgba(7, 51, 101, .06) 62%, transparent 73%); box-shadow: inset 0 0 18px rgba(112, 221, 255, .24), 0 0 19px rgba(42, 165, 255, .38); }
+.health-cylinder::after { bottom: -27px; border-color: rgba(69, 178, 255, .65); background: radial-gradient(ellipse, rgba(30, 145, 247, .16), transparent 67%); box-shadow: inset 0 0 19px rgba(58, 174, 255, .24), 0 0 21px rgba(26, 137, 236, .32); }
+.health-cylinder > i { top: 21%; height: 42px; border-width: 1px; border-color: rgba(75, 184, 252, .23); }
+.health-cylinder > span { bottom: 17%; height: 46px; border-width: 1px; border-color: rgba(75, 184, 252, .2); }
+.health-label.top { z-index: 7; top: 17px; border-width: 2px; border-color: rgba(132, 225, 255, .92); background: radial-gradient(ellipse, rgba(12, 88, 167, .55), rgba(2, 27, 65, .78) 70%); box-shadow: inset 0 0 24px rgba(80, 191, 255, .24), 0 0 7px rgba(132, 230, 255, .74), 0 0 28px rgba(28, 152, 255, .42); }
+.health-label.top::after {
+  position: absolute;
+  right: 16px;
+  bottom: -9px;
+  left: 16px;
+  height: 15px;
+  border-bottom: 1px solid rgba(106, 214, 255, .52);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+.warehouse-core { z-index: 5; top: 57%; width: min(72%, 360px); }
+.orbit { z-index: 2; border-color: rgba(61, 170, 255, .4); box-shadow: 0 0 11px rgba(41, 151, 244, .17), inset 0 0 11px rgba(48, 158, 247, .1); }
+.orbit-a { border-width: 2px; border-color: rgba(74, 194, 255, .58); }
+.orbit-b { border-style: dashed; border-color: rgba(59, 162, 246, .35); }
+.health-link {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(97, 213, 255, .88), transparent);
+  filter: drop-shadow(0 0 4px rgba(77, 198, 255, .8));
+  transform-origin: center;
+}
+.health-link::after { position: absolute; top: -3px; width: 7px; height: 7px; border: 1px solid #a4edff; border-radius: 50%; content: ""; background: #35b6ff; box-shadow: 0 0 8px #40c0ff; }
+.link-left { top: 53%; left: 17%; width: 25%; transform: rotate(10deg); }.link-left::after { right: 0; }
+.link-right { top: 53%; right: 17%; width: 25%; transform: rotate(-10deg); }.link-right::after { left: 0; }
+.link-bottom { bottom: 21%; left: 50%; width: 15%; transform: translateX(-50%) rotate(90deg); }.link-bottom::after { right: 0; }
+.health-satellite {
+  z-index: 7;
+  width: 138px;
+  height: 80px;
+  padding-left: 25px;
+  border: 2px solid rgba(105, 218, 255, .75);
+  background: radial-gradient(ellipse, rgba(12, 86, 160, .72), rgba(2, 23, 54, .91) 72%);
+  box-shadow: inset 0 0 0 5px rgba(55, 172, 246, .06), inset 0 0 23px rgba(67, 180, 255, .17), 0 0 7px rgba(100, 222, 255, .56), 0 0 23px rgba(27, 143, 239, .35);
+}
+.health-satellite::after {
+  position: absolute;
+  inset: -8px 9px;
+  border-top: 1px solid rgba(126, 225, 255, .46);
+  border-bottom: 1px solid rgba(60, 162, 247, .42);
+  border-radius: 50%;
+  content: "";
+  pointer-events: none;
+}
+.health-satellite.warning { border-color: rgba(255, 189, 74, .72); box-shadow: inset 0 0 0 5px rgba(255, 178, 44, .05), inset 0 0 22px rgba(255, 160, 32, .12), 0 0 7px rgba(255, 187, 61, .48), 0 0 22px rgba(255, 145, 20, .23); }
+.health-satellite.good { border-color: rgba(61, 231, 199, .72); box-shadow: inset 0 0 0 5px rgba(48, 222, 185, .05), inset 0 0 22px rgba(42, 215, 181, .12), 0 0 7px rgba(72, 240, 210, .48), 0 0 22px rgba(30, 210, 176, .2); }
+.satellite-left { top: 48%; left: 4%; }.satellite-right { top: 48%; right: 4%; }.satellite-bottom { bottom: 8%; }
+
+/* Fill the owner panel edge-to-edge and move warehouse risk bars left. */
+.owner-panel { display: flex; min-height: 0; flex-direction: column; }
+.owner-panel > .panel-heading { flex: 0 0 34px; }
+.owner-panel > .owner-table {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  flex: 1;
+  padding: 0 4px 3px;
+}
+.owner-head,
+.owner-row {
+  width: 100%;
+  grid-template-columns: minmax(92px, 1.5fr) minmax(54px, .72fr) minmax(48px, .62fr) minmax(52px, .68fr) minmax(84px, 1.08fr);
+  column-gap: 12px;
+  padding-inline: 10px;
+}
+.owner-head {
+  min-height: 32px;
+  flex-basis: 32px;
+  border-bottom-color: rgba(87, 175, 235, .34);
+  background: linear-gradient(90deg, rgba(20, 84, 142, .16), rgba(6, 38, 78, .06));
+}
+.owner-scroll-viewport {
+  width: 100%;
+  border-bottom: 1px solid rgba(68, 153, 216, .16);
+}
+.owner-row { background: linear-gradient(90deg, rgba(21, 92, 151, .18), rgba(6, 38, 78, .07) 76%, rgba(21, 92, 151, .1)); }
+.owner-row:nth-child(2n) { background: linear-gradient(90deg, rgba(31, 119, 184, .22), rgba(4, 29, 61, .08) 58%, rgba(24, 92, 150, .13)); }
+.owner-head > span:not(:first-child),
+.owner-row > span,
+.owner-row > b,
+.owner-row > em,
+.owner-row > small { text-align: center; }
+
+.warehouse-bars { padding-inline: 5px 9px; }
+.warehouse-table-head,
+.warehouse-risk-row {
+  grid-template-columns: 100px minmax(138px, 1fr) 58px 54px;
+  column-gap: 6px;
+}
+.warehouse-identity { gap: 5px; }
+.warehouse-identity strong { width: 29px; flex-basis: 29px; }
+/* Final hierarchy: central cylinder is local; three overall indices sit outside it. */
+.health-core-panel::before {
+  opacity: .95;
+  background:
+    linear-gradient(90deg, transparent 49.78%, rgba(100, 218, 255, .23) 50%, transparent 50.22%),
+    linear-gradient(0deg, transparent 49.78%, rgba(153, 105, 255, .18) 50%, transparent 50.22%),
+    repeating-radial-gradient(ellipse at 50% 59%, transparent 0 42px, rgba(45, 170, 255, .22) 43px 44px, transparent 45px 66px);
+}
+.health-field-lines { opacity: .98; }
+.health-field-lines::before { border-color: rgba(56, 194, 255, .42); box-shadow: inset 0 0 22px rgba(36, 139, 231, .22), 0 0 17px rgba(23, 115, 210, .25); }
+.health-field-lines::after { border-color: rgba(174, 104, 255, .44); box-shadow: 0 0 13px rgba(139, 78, 255, .25); }
+.health-field-lines i { height: 2px; box-shadow: 0 0 8px currentColor; }
+.health-field-lines i:nth-child(1) { color: #53d7ff; background: linear-gradient(90deg, transparent, rgba(50,184,255,.44) 18%, #7be6ff 50%, rgba(50,184,255,.44) 82%, transparent); }
+.health-field-lines i:nth-child(2) { color: #9b70ff; background: linear-gradient(90deg, transparent, rgba(132,78,255,.4) 18%, #bb92ff 50%, rgba(132,78,255,.4) 82%, transparent); }
+.health-field-lines i:nth-child(3) { color: #ffad42; background: linear-gradient(90deg, transparent, rgba(255,145,35,.38) 18%, #ffc264 50%, rgba(255,145,35,.38) 82%, transparent); }
+.health-field-lines i:nth-child(4) { color: #3ef0bd; background: linear-gradient(90deg, transparent, rgba(39,220,174,.38) 18%, #7dffd9 50%, rgba(39,220,174,.38) 82%, transparent); }
+.health-cylinder {
+  top: 12px;
+  bottom: 23%;
+  width: clamp(228px, 42%, 270px);
+  border-right: 2px solid rgba(91, 212, 255, .7);
+  border-left: 2px solid rgba(91, 212, 255, .7);
+  background:
+    repeating-linear-gradient(180deg, transparent 0 36px, rgba(95,203,255,.1) 37px, transparent 38px 49px),
+    linear-gradient(90deg, rgba(25,119,218,.04), rgba(76,185,255,.14) 17%, transparent 37%, rgba(176,240,255,.15) 50%, transparent 63%, rgba(81,182,255,.11) 83%, rgba(17,101,199,.03)),
+    linear-gradient(180deg, rgba(50,176,255,.16), transparent 18% 72%, rgba(108,76,232,.13));
+  box-shadow: inset 23px 0 30px rgba(22,119,216,.13), inset -23px 0 30px rgba(66,181,255,.12), inset 0 0 30px rgba(76,196,255,.09), 0 0 9px rgba(85,216,255,.46), 0 0 39px rgba(28,135,231,.22);
+}
+.health-cylinder::before { border-color: rgba(127,231,255,.95); background: radial-gradient(ellipse, rgba(64,191,255,.23), rgba(46,83,181,.1) 54%, transparent 73%); box-shadow: inset 0 0 20px rgba(130,231,255,.36), 0 0 8px rgba(149,235,255,.76), 0 0 24px rgba(42,165,255,.5); }
+.health-cylinder::after { border-color: rgba(105,207,255,.86); background: radial-gradient(ellipse, rgba(30,145,247,.24), rgba(111,72,220,.1) 47%, transparent 70%); box-shadow: inset 0 0 22px rgba(58,174,255,.33), 0 0 7px rgba(112,219,255,.66), 0 0 25px rgba(95,75,235,.34); }
+.health-cylinder > i { border-color: rgba(90,214,255,.38); box-shadow: 0 0 10px rgba(54,183,255,.2); }
+.health-cylinder > span { border-color: rgba(178,108,255,.34); box-shadow: 0 0 10px rgba(141,73,255,.18); }
+.orbit { border-color: rgba(61,187,255,.6); box-shadow: 0 0 13px rgba(41,168,244,.3), inset 0 0 12px rgba(48,158,247,.18); }
+.orbit-a { border-color: rgba(73,214,255,.84); box-shadow: 0 0 10px rgba(54,207,255,.5), inset 0 0 15px rgba(40,158,255,.22); }
+.orbit-b { border-color: rgba(177,101,255,.62); box-shadow: 0 0 10px rgba(139,73,255,.32); }
+.orbit-c { border-color: rgba(255,174,66,.68); box-shadow: 0 0 10px rgba(255,140,31,.32); }
+.health-satellite {
+  width: 164px;
+  height: 94px;
+  padding-left: 31px;
+}
+.health-satellite::before { inset: 7px; border-color: rgba(149,232,255,.4); }
+.health-satellite .satellite-glyph { top: 24px; left: 13px; width: 38px; height: 44px; }
+.health-satellite small { top: 13px; left: 57px; color: #f0f9ff; font-size: 12px; font-weight: 820; letter-spacing: .03em; text-shadow: 0 0 7px rgba(114,211,255,.58); }
+.health-satellite strong { margin: 18px 0 0 18px; font-size: 38px; font-weight: 880; line-height: 1; }
+.health-satellite em { margin-top: 31px; color: #d9edf8; font-size: 12px; font-weight: 800; }
+.satellite-left { top: 44%; left: 1%; }
+.satellite-right { top: 44%; right: 1%; }
+.satellite-bottom { bottom: 10%; }
+
+/* Keep metric typography on an untransformed layer so Chinese labels stay crisp. */
+.health-label.top {
+  transform: translateX(-50%);
+  filter: none;
+  backface-visibility: visible;
+}
+.health-satellite {
+  transform: none;
+  filter: none;
+  backdrop-filter: none;
+  animation: none;
+  backface-visibility: visible;
+}
+.satellite-bottom { transform: translateX(-50%); }
+.health-caption,
+.health-label.top span,
+.health-satellite small {
+  color: #f4fbff !important;
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-shadow: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+.health-caption,
+.health-label.top span {
+  font-size: 12px !important;
+}
+.health-satellite small {
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+/* Emphasize the central illustration score and seat it deeper inside the cylinder. */
+.health-label.top {
+  top: 31px;
+  width: 226px;
+  height: 108px;
+  grid-template-rows: 24px 56px;
+  padding: 9px 15px;
+}
+.health-label.top::before { inset: 6px; }
+.health-label.top::after { right: 19px; bottom: -10px; left: 19px; height: 17px; }
+.health-glyph { top: 33px; left: 17px; width: 39px; height: 45px; }
+.health-caption,
+.health-label.top span { font-size: 14px !important; }
+.health-score-line { gap: 7px; padding-left: 8px; }
+.health-score-line strong,
+.health-label.top .health-score-line strong { font-size: 50px; }
+.health-score-line em,
+.health-label.top .health-score-line em { font-size: 12px; }
+
+/* Wide planetary lanes fill the upper corners without competing with data. */
+.planetary-field {
+  position: absolute;
+  z-index: 1;
+  inset: -5% -16% 2%;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: .92;
+  mask-image: radial-gradient(ellipse 87% 74% at 50% 50%, #000 35%, rgba(0,0,0,.84) 72%, transparent 100%);
+}
+.planetary-field::before,
+.planetary-field::after,
+.planetary-field > i {
+  position: absolute;
+  top: 40%;
+  left: 50%;
+  width: 93%;
+  height: 49%;
+  border: 1px solid rgba(52, 156, 255, .27);
+  border-radius: 50%;
+  content: "";
+  box-shadow: 0 0 8px rgba(39, 147, 255, .15), inset 0 0 11px rgba(39, 147, 255, .1);
+  transform: translate(-50%, -50%) rotate(-8deg);
+}
+.planetary-field::after { width: 108%; height: 61%; border-color: rgba(72, 191, 255, .2); transform: translate(-50%, -50%) rotate(6deg); }
+.planetary-field > i:nth-child(1) { width: 76%; height: 38%; border-color: rgba(160, 102, 255, .32); border-style: dashed; transform: translate(-50%, -50%) rotate(13deg); }
+.planetary-field > i:nth-child(2) { width: 122%; height: 70%; border-color: rgba(32, 126, 235, .2); transform: translate(-50%, -50%) rotate(-3deg); }
+.planetary-field > i:nth-child(3),
+.planetary-field > i:nth-child(4) {
+  width: 42%;
+  height: 20%;
+  border-width: 2px 0 0;
+  border-color: transparent;
+  border-top-color: #ffad38;
+  border-radius: 50%;
+  box-shadow: 0 -1px 8px rgba(255, 139, 31, .58);
+}
+.planetary-field > i:nth-child(3) { top: 25%; left: 21%; transform: translate(-50%, -50%) rotate(-8deg); }
+.planetary-field > i:nth-child(4) { top: 25%; left: 79%; border-top-color: #4bcdff; box-shadow: 0 -1px 8px rgba(56, 191, 255, .62); transform: translate(-50%, -50%) rotate(8deg); }
+.planetary-field > span {
+  position: absolute;
+  z-index: 2;
+  width: 8px;
+  height: 8px;
+  border: 1px solid rgba(221, 248, 255, .9);
+  border-radius: 50%;
+  background: #50d8ff;
+  box-shadow: 0 0 5px #b8f3ff, 0 0 14px #28b9ff;
+  animation: planet-node-pulse 3.2s ease-in-out infinite;
+}
+.planetary-field > span:nth-of-type(1) { top: 19%; left: 13%; }
+.planetary-field > span:nth-of-type(2) { top: 18%; right: 13%; width: 7px; height: 7px; background: #ffae3c; box-shadow: 0 0 5px #ffe0a0, 0 0 14px #ff8d24; animation-delay: -1.1s; }
+.planetary-field > span:nth-of-type(3) { top: 39%; right: 5%; width: 5px; height: 5px; background: #a779ff; box-shadow: 0 0 5px #dbc8ff, 0 0 12px #8c55ff; animation-delay: -2.2s; }
+.warehouse-core { width: min(84%, 420px); }
+@keyframes planet-node-pulse { 0%, 100% { opacity: .55; transform: scale(.82); } 50% { opacity: 1; transform: scale(1.35); } }
+
+/* Crisp orbital rendering: solid cores with tightly controlled glow. */
+.health-core-panel::before {
+  background:
+    linear-gradient(90deg, transparent calc(50% - .5px), rgba(121, 228, 255, .52) 50%, transparent calc(50% + .5px)),
+    linear-gradient(0deg, transparent calc(50% - .5px), rgba(174, 124, 255, .36) 50%, transparent calc(50% + .5px)),
+    repeating-radial-gradient(ellipse at 50% 59%, transparent 0 42px, rgba(70, 182, 255, .36) 43px, transparent 44px 66px);
+}
+.health-field-lines::before,
+.health-field-lines::after {
+  border-width: 1px;
+  box-shadow: none;
+}
+.health-field-lines::before { border-color: rgba(95, 211, 255, .62); }
+.health-field-lines::after { border-color: rgba(190, 126, 255, .58); border-style: solid; }
+.health-field-lines i {
+  height: 1px;
+  box-shadow: 0 0 2px currentColor;
+}
+.health-field-lines i:nth-child(1) { background: linear-gradient(90deg, transparent, #52caff 17%, #c7f7ff 50%, #52caff 83%, transparent); }
+.health-field-lines i:nth-child(2) { background: linear-gradient(90deg, transparent, #9a65ff 17%, #e1d2ff 50%, #9a65ff 83%, transparent); }
+.health-field-lines i:nth-child(3) { background: linear-gradient(90deg, transparent, #ff9c2f 17%, #ffe09b 50%, #ff9c2f 83%, transparent); }
+.health-field-lines i:nth-child(4) { background: linear-gradient(90deg, transparent, #27dca7 17%, #b7ffe9 50%, #27dca7 83%, transparent); }
+.orbit,
+.orbit-a,
+.orbit-b,
+.orbit-c { border-width: 1px; border-style: solid; box-shadow: none; filter: none; animation-name: orbit-crisp-pulse; }
+.orbit-a { border-width: 2px; border-color: rgba(96, 222, 255, .9); box-shadow: 0 0 3px rgba(67, 203, 255, .5); }
+.orbit-b { border-color: rgba(186, 116, 255, .76); }
+.orbit-c { border-color: rgba(255, 180, 72, .82); }
+.orbit::before { filter: none; }
+.planetary-field { opacity: 1; }
+.planetary-field::before,
+.planetary-field::after,
+.planetary-field > i {
+  border-width: 1px;
+  box-shadow: none;
+}
+.planetary-field::before { border-color: rgba(85, 188, 255, .58); }
+.planetary-field::after { border-color: rgba(71, 179, 255, .44); }
+.planetary-field > i:nth-child(1) { border-color: rgba(177, 108, 255, .58); border-style: solid; }
+.planetary-field > i:nth-child(2) { border-color: rgba(45, 137, 248, .4); }
+.planetary-field > i:nth-child(3),
+.planetary-field > i:nth-child(4) { border-top-width: 2px; box-shadow: 0 -1px 2px currentColor; }
+.planetary-field > i:nth-child(3) { color: #ffad38; }
+.planetary-field > i:nth-child(4) { color: #4bcdff; }
+.health-link { height: 1px; filter: none; }
+@keyframes orbit-crisp-pulse {
+  0%, 100% { opacity: .64; }
+  50% { opacity: 1; }
+}
+
+/* Keep the central score frameless; let the cylinder itself carry the visual hierarchy. */
+.health-label.top {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  animation: none;
+}
+.health-label.top::before,
+.health-label.top::after { content: none; }
+
+/* Deep-blue double rim for the cylinder crown. */
+.health-cylinder {
+  top: 30px;
+  border-right-color: rgba(40, 128, 226, .92);
+  border-left-color: rgba(40, 128, 226, .92);
+  background:
+    linear-gradient(90deg, rgba(16, 73, 164, .11), rgba(40, 135, 232, .22) 18%, transparent 39%, rgba(63, 164, 255, .24) 50%, transparent 62%, rgba(35, 121, 221, .2) 82%, rgba(9, 54, 139, .1)),
+    linear-gradient(180deg, rgba(30, 116, 222, .22), rgba(5, 35, 102, .08) 24% 70%, rgba(24, 96, 205, .2));
+  box-shadow: inset 22px 0 29px rgba(20, 88, 195, .21), inset -22px 0 29px rgba(45, 143, 242, .2), 0 0 20px rgba(16, 78, 181, .3);
+}
+.health-label.top { top: 31px; }
+.health-score-line { transform: translateX(16px); }
+.health-label.top .health-glyph { transform: translateX(8px); }
+.health-satellite .satellite-glyph { transform: translateX(8px); }
+.health-satellite strong {
+  display: inline-block;
+  transform: translateX(-9px);
+}
+.warning-grid > div > svg {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  stroke-width: 1.8;
+}
+.warning-grid > div > span { margin-left: 10px; }
+.health-cylinder::before {
+  top: -49px;
+  width: calc(100% + 24px);
+  height: 102px;
+  border: 2px solid rgba(25, 91, 190, 1);
+  background:
+    radial-gradient(ellipse at 50% 62%, rgba(42, 132, 235, .42), rgba(10, 54, 137, .3) 53%, rgba(2, 22, 68, .22) 70%, transparent 74%),
+    linear-gradient(180deg, rgba(8, 40, 104, .18) 0 44%, rgba(31, 101, 204, .4) 72%, rgba(5, 31, 94, .58) 100%);
+  box-shadow:
+    0 0 0 3px rgba(4, 31, 91, 1),
+    0 0 0 5px rgba(23, 77, 166, .9),
+    inset 0 0 0 2px rgba(58, 140, 239, .72),
+    inset 0 -10px 17px rgba(27, 101, 213, .55),
+    inset 0 11px 18px rgba(3, 22, 70, .62),
+    0 5px 10px rgba(5, 22, 65, .55),
+    0 0 14px rgba(20, 89, 199, .52);
+  transform: translateX(-50%) perspective(300px) rotateX(9deg);
+  transform-origin: 50% 100%;
+}
 @keyframes emblem-scan {
   0%, 12% { top: 16px; opacity: 0; }
   28% { opacity: .9; }
@@ -1321,6 +2059,6 @@ function exportRiskList() {
   .aging-page, .aging-hero::after, .aging-emblem, .aging-live span::after, .aging-kpi-icon, .aging-kpi::after,
   .aging-panel::before, .aging-panel::after, .health-core-panel::after, .panel-heading::after, .panel-number::after,
   .orbit, .orbit::before, .health-label.top, .warehouse-core, .warehouse-core img, .warehouse-scan, .health-satellite, .aging-emblem-scan,
-  .warehouse-track i::after, .readiness-list > i em::after, .risk-scroll-track { animation: none !important; }
+  .warehouse-track i::after, .readiness-list > i em::after, .risk-scroll-track, .owner-scroll-track { animation: none !important; }
 }
 </style>
