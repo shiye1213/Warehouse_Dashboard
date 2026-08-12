@@ -443,7 +443,7 @@ function openNavigation() {
         <aside class="board-column verified-left">
           <article class="blue-panel source-trend-card" @click="open('/operations')">
             <header class="panel-heading"><div><span>01</span><h2>{{ daily.length }} 天成品入出库趋势</h2></div><small>单位：箱</small></header>
-            <TrendChart :key="'main-trend-' + refreshVersion" class="finished-trend" :rows="daily" :series="trendSeries" :height="190" draw-animation latest-pulse />
+            <TrendChart :key="'main-trend-' + refreshVersion" class="finished-trend" :rows="daily" :series="trendSeries" :height="190" large-text draw-animation latest-pulse />
           </article>
 
           <article class="blue-panel source-operation-card" @click="open('/operations')">

@@ -14,6 +14,7 @@ const props = defineProps({
   showLegend: { type: Boolean, default: true },
   drawAnimation: { type: Boolean, default: false },
   compact: { type: Boolean, default: false },
+  largeText: { type: Boolean, default: false },
   latestPulse: { type: Boolean, default: false },
   yMin: { type: Number, default: undefined },
   yMax: { type: Number, default: undefined },
@@ -33,20 +34,20 @@ const options = computed(() => ({
   color: props.series.map((item) => item.color),
   grid: props.compact
     ? { left: 2, right: 2, top: 7, bottom: 2, containLabel: false }
-    : { left: 12, right: 14, top: props.showLegend ? 44 : 18, bottom: 8, containLabel: true },
+    : { left: 12, right: 14, top: props.showLegend ? (props.largeText ? 48 : 44) : 18, bottom: 8, containLabel: true },
   legend: props.showLegend ? {
     top: 2,
     right: 4,
     icon: 'roundRect',
     itemWidth: 12,
     itemHeight: 4,
-    textStyle: { color: '#8ea4a4', fontSize: 11 },
+    textStyle: { color: '#8ea4a4', fontSize: props.largeText ? 14 : 11 },
   } : undefined,
   tooltip: {
     trigger: 'axis',
     backgroundColor: 'rgba(4, 17, 19, .96)',
     borderColor: 'rgba(155, 196, 190, .18)',
-    textStyle: { color: '#e8f2ef', fontSize: 12 },
+    textStyle: { color: '#e8f2ef', fontSize: props.largeText ? 14 : 12 },
     axisPointer: { type: 'line', lineStyle: { color: 'rgba(91, 223, 190, .28)' } },
   },
   xAxis: {
@@ -55,14 +56,14 @@ const options = computed(() => ({
     data: props.rows.map((item) => item.date?.slice(5).replace('-', '/') || item.label || ''),
     axisLine: { show: !props.compact, lineStyle: { color: 'rgba(150, 184, 180, .14)' } },
     axisTick: { show: false },
-    axisLabel: { show: !props.compact, color: '#6f8584', fontSize: 10, interval: Math.max(0, Math.floor(props.rows.length / 7) - 1) },
+    axisLabel: { show: !props.compact, color: '#6f8584', fontSize: props.largeText ? 12 : 10, interval: Math.max(0, Math.floor(props.rows.length / 7) - 1) },
   },
   yAxis: {
     type: 'value',
     min: props.yMin,
     max: props.yMax,
     splitNumber: 4,
-    axisLabel: { show: !props.compact, color: '#6f8584', fontSize: 10 },
+    axisLabel: { show: !props.compact, color: '#6f8584', fontSize: props.largeText ? 12 : 10 },
     splitLine: { lineStyle: { color: props.compact ? 'rgba(115, 170, 211, .07)' : 'rgba(150, 184, 180, .08)' } },
   },
   series: [

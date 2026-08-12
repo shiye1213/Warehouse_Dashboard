@@ -1659,7 +1659,7 @@ a { color: inherit; }
     rgba(3, 22, 54, .38);
   background-size: 100% 20px;
 }
-.business-mini-chart > span { display: block; color: color-mix(in srgb, var(--step) 72%, #cde5ff); font-size: 7px; }
+.business-mini-chart > span { display: block; color: color-mix(in srgb, var(--step) 72%, #cde5ff); font-size: 9px; }
 .business-mini-chart .chart-canvas { width: 100%; }
 .business-mini-chart > small {
   display: flex;
@@ -1667,7 +1667,7 @@ a { color: inherit; }
   justify-content: space-between;
   margin-top: -7px;
   color: #6988b0;
-  font-size: 6px;
+  font-size: 8px;
 }
 .business-mini-chart > small i { font-style: normal; }
 
@@ -2441,3 +2441,58 @@ a { color: inherit; }
   .source-kpi-list > div > div i,
   .source-type-list i em { transform: scaleX(1); }
 }
+
+
+/* Finished-goods board: improve text legibility in the highlighted data modules. */
+.verified-board .source-operation-card .panel-heading,
+.verified-board .source-week-card .panel-heading,
+.verified-board .source-exception-card .panel-heading,
+.verified-board .source-alert-list .panel-heading {
+  min-height: 42px;
+}
+.verified-board .source-operation-card .panel-heading > div > span,
+.verified-board .source-week-card .panel-heading > div > span,
+.verified-board .source-exception-card .panel-heading > div > span,
+.verified-board .source-alert-list .panel-heading > div > span { font-size: 10px; }
+.verified-board .source-operation-card .panel-heading h2,
+.verified-board .source-week-card .panel-heading h2,
+.verified-board .source-exception-card .panel-heading h2,
+.verified-board .source-alert-list .panel-heading h2 { font-size: 17px; }
+.verified-board .source-operation-card .panel-heading > small,
+.verified-board .source-week-card .panel-heading > small,
+.verified-board .source-exception-card .panel-heading > small,
+.verified-board .source-alert-list .panel-heading > small { font-size: 10px; }
+
+.verified-board .source-operation-card .source-operation-grid { height: calc(100% - 42px); }
+.verified-board .source-operation-grid span { font-size: 11px; }
+.verified-board .source-operation-grid strong { font-size: 20px; }
+.verified-board .source-operation-grid strong small { font-size: 10px; }
+
+.verified-board .source-week-list span { font-size: 11px; }
+.verified-board .source-week-list strong { font-size: clamp(19px, 1.45vw, 24px); }
+.verified-board .source-week-list strong small { font-size: 10px; }
+.verified-board .source-week-list em { font-size: 11px; }
+
+.verified-board .inventory-snapshot h3 { font-size: 15px; }
+.verified-board .inventory-snapshot > header > span { font-size: 10px; }
+.verified-board .inventory-summary span { font-size: 10px; }
+.verified-board .inventory-summary strong { font-size: 23px; }
+.verified-board .inventory-summary small { font-size: 9px; }
+
+.verified-board .exception-summary span { font-size: 10px; }
+.verified-board .exception-summary.is-five strong { font-size: 23px; }
+.verified-board .exception-summary small { font-size: 9px; }
+.verified-board .source-type-list > div { grid-template-columns: 92px minmax(80px, 1fr) 38px; }
+.verified-board .source-type-list span,
+.verified-board .source-type-list strong { font-size: 10px; }
+
+.verified-board .actual-alert-head,
+.verified-board .actual-alert-rows > div {
+  grid-template-columns: 55px minmax(0, 1fr) 72px 44px 54px;
+}
+.verified-board .actual-alert-head { font-size: 9px; }
+.verified-board .actual-alert-rows .alert-severity,
+.verified-board .actual-alert-rows > div > strong,
+.verified-board .actual-alert-rows > div > small,
+.verified-board .actual-alert-rows > div > b,
+.verified-board .actual-alert-rows > div > em { font-size: 9px; }
